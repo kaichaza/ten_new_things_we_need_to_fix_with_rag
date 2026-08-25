@@ -1,0 +1,13 @@
+[project]
+name = "semantic-chunking-two-llms"
+version = "0.1.0"
+description = "A cheaper second LLM proposes chunk boundaries; naive slicing loses"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openai>=1.60.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

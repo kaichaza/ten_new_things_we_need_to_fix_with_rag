@@ -1,0 +1,15 @@
+[project]
+name = "observability-langfuse-otel"
+version = "0.1.0"
+description = "One trace ID from question to answer: OpenTelemetry GenAI spans + Langfuse"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "opentelemetry-sdk>=1.44.0",
+    "langfuse>=4.0.0",
+    "openai>=1.60.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

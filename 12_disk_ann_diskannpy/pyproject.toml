@@ -1,0 +1,19 @@
+[project]
+name = "disk-ann-diskannpy"
+version = "0.1.0"
+description = "Disk-first approximate nearest neighbour search with DiskANN"
+# EXCEPTION in this series: diskannpy 0.7.0 publishes wheels only for
+# CPython 3.9-3.11 and no source distribution, so this one exercise pins
+# Python 3.11. Every other exercise uses 3.12.
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "diskannpy==0.7.0",
+    # numpy is deliberately NOT pinned here. diskannpy 0.7.0 requires
+    # numpy==1.25 exactly, so any explicit bound above that makes the
+    # project unresolvable. Let diskannpy declare what it needs.
+    "openai>=1.60.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

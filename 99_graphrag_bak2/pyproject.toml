@@ -1,0 +1,18 @@
+[project]
+name = "graphrag-fruit-graph"
+version = "0.1.0"
+description = "Corpus-level questions via GraphRAG's entity graph and Leiden community reports"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Hard pin. GraphRAG's Python API has moved parameter names between
+    # releases, and this exercise calls it directly rather than through the
+    # CLI. main.py introspects signatures so it degrades gracefully, but the
+    # pin is what makes a clone reproducible.
+    "graphrag==3.1.1",
+    "pandas>=2.0.0",
+    "pyarrow>=15.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

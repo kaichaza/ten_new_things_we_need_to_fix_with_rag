@@ -1,0 +1,14 @@
+[project]
+name = "pii-erasure-replay"
+version = "0.1.0"
+description = "Right to erasure in a vector index: redact the source, replay the build, purge history"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "lancedb>=0.36.0",
+    "pyarrow>=17.0.0",
+    "openai>=1.60.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

@@ -1,0 +1,383 @@
+RUNBOOK: testing all twelve exercises, locally then in Docker
+Every command is run from the project root: ~/gen_ai_topics_practice
+Copy one line at a time. Check the "Expect" note before moving on.
+
+
+=====================================================================
+PHASE A. Before anything runs
+=====================================================================
+
+=== STEP 1. Confirm you are in the project root ===
+
+  pwd && ls -d [0-9][0-9]_* | wc -l
+
+  Expect: a path ending in gen_ai_topics_practice, then 12.
+  If you get anything else, stop and cd to the right place.
+
+
+=== STEP 2. Confirm .gitignore is in place ===
+
+  head -1 .gitignore && grep -c "^\.env$" .gitignore
+
+  Expect: the first comment line, then 1.
+  If the count is 0, your live keys are not protected. Fix that first.
+
+
+=== STEP 3. Confirm the tooling is present ===
+
+  uv --version && docker --version && docker info >/dev/null 2>&1 && echo "docker daemon OK"
+
+  Expect: a uv version, a docker version, and "docker daemon OK".
+  If the daemon line is missing, start Docker Desktop and try again.
+
+  Then confirm the sweep script is executable:
+
+  test -x run_all_exercises.sh && echo "run_all_exercises.sh is executable"
+
+  Expect: the confirmation line.
+  If not:  chmod +x run_all_exercises.sh
+
+
+=== STEP 4. Confirm the API key landed in all twelve, without printing it ===
+
+  for d in [0-9][0-9]_*/; do printf '%-34s %s\n' "$d" "$(grep -c '^OPENAI_API_KEY=sk-' "$d/.env" 2>/dev/null || echo 0)"; done
+
+  Expect: twelve rows, every one showing 1.
+
+
+=== STEP 5. Note your starting credit balance ===
+
+  Open platform.openai.com/settings/organization/billing/overview in a browser
+  and write down the number. You will compare against it after each phase.
+
+  Nothing to run here.
+
+
+=====================================================================
+PHASE B. Local test sweep. Cheap first, expensive last.
+=====================================================================
+
+=== STEP 6. Dry run. Confirms the plan, spends nothing ===
+
+  ./run_all_exercises.sh --dry-run
+
+  Expect: twelve "would run" lines, with 01_stale_index_replay marked
+  [needs Docker services]. No warnings about missing folders.
+
+
+=== STEP 7. The cheap sweep. Eleven exercises, skipping graphrag ===
+
+  ./run_all_exercises.sh --skip 03
+
+  Expect: a results table, mostly PASS. This takes a few minutes and
+  spends a small amount. 01 will start and stop a Postgres container
+  on its own.
+
+  If anything FAILs, read the tail printed on screen, then dig in with
+  the grep command the report gives you. Do not move on until you
+  understand each failure.
+
+
+=== STEP 8. Check what that actually cost ===
+
+  Open platform.openai.com/usage and look at Cost for today.
+  Compare against the number from Step 5.
+
+  Nothing to run here.
+
+
+=== STEP 9. Confirm nothing was left running ===
+
+  docker ps -a && docker volume ls
+
+  Expect: empty lists, or at least nothing from these exercises. The
+  sweep tears its own services down; this is the check that it did.
+
+
+=== STEP 10. graphrag on its own. This is the slow, costly one ===
+
+  ./run_all_exercises.sh --only 03
+
+  Expect: several minutes. It indexes the corpus with real model calls -
+  entity extraction and community summarisation across the whole thing.
+  Watch it rather than walking away, given the credit balance.
+
+
+=== STEP 11. Check the cost of graphrag specifically ===
+
+  Open platform.openai.com/usage again.
+  The delta since Step 8 is what indexing cost. Write it down - it is a
+  genuinely useful number to be able to quote.
+
+  Nothing to run here.
+
+
+=== STEP 12. Full sweep, now that both halves are known good ===
+
+  ./run_all_exercises.sh
+
+  Expect: all twelve, and faster on 03 than Step 10 was, because its
+  walkthrough skips re-indexing when output/ already holds parquet.
+
+
+=== STEP 13. Read the transcript if you want the detail ===
+
+  less test_run.log
+
+  Everything is in there: full uv sync output, full pytest output per
+  exercise. Press q to quit.
+
+
+=====================================================================
+PHASE C. Preparing for Docker
+=====================================================================
+
+=== STEP 14. Baseline your Docker disk usage ===
+
+  docker system df
+
+  Write down the numbers. You will compare after the builds so you know
+  exactly what to reclaim.
+
+
+=== STEP 15. Sanity check one build context ===
+
+  du -sh --exclude=.venv --exclude=__pycache__ 02_hybrid_rerank_retrieval
+
+  Expect: a few hundred kilobytes. This is roughly what Docker will send
+  as the build context. If it reads in hundreds of megabytes, something
+  is copying a virtualenv and the builds will be very slow.
+
+
+=== STEP 16. Decide what you are actually validating ===
+
+  Two different things, with very different costs:
+
+    docker build   free, just time and disk. Proves the image assembles.
+    docker run     runs "main.py walk", which makes real API calls -
+                   the same spend again as the local run, per exercise.
+
+  Recommendation: build all twelve, run two or three. Building proves the
+  Dockerfiles are correct, which is what a reader cloning the repo cares
+  about. Running twelve full walkthroughs a second time is the same money
+  for information you already have.
+
+  Nothing to run here.
+
+
+=====================================================================
+PHASE D. Docker, strictly one at a time
+=====================================================================
+
+Each exercise follows the same three steps: build, optionally run, then
+delete the image before starting the next one. Never build two at once.
+
+
+=== STEP 17. Set the exercise you are working on ===
+
+  EX=02_hybrid_rerank_retrieval
+
+  Change this line for each exercise and repeat steps 19 to 22.
+  Do 01 last - it is the special case, covered in step 23.
+
+
+=== STEP 18. Build it ===
+
+  docker build -t "ex_${EX}" "./${EX}"
+
+  Expect: a successful build ending in "naming to docker.io/library/ex_...".
+  First build pulls the uv base image; later ones reuse it.
+
+
+=== STEP 19. OPTIONAL - run the walkthrough in the container ===
+
+  docker run --rm --memory=2g --env-file "${EX}/.env" "ex_${EX}"
+
+  --rm deletes the container the moment it exits, so nothing accumulates.
+  --memory=2g caps it, so a runaway cannot take the machine down.
+
+  This spends money. Skip it for most exercises; use it on one or two to
+  prove the containerised path works.
+
+
+=== STEP 20. Delete the image before moving on ===
+
+  docker rmi "ex_${EX}" && docker system df
+
+  Expect: "Untagged" and "Deleted" lines, then the disk table. Watch the
+  Build Cache row - it grows even when images are deleted.
+
+
+=== STEP 21. Repeat ===
+
+  Go back to step 18, change EX to the next one, and work through:
+
+    02_hybrid_rerank_retrieval
+    03_graphrag_fruit_graph
+    04_rag_eval_ragas
+    05_pii_erasure_replay
+    06_injection_defence_llm_guard
+    07_model_routing_litellm
+    08_bounded_agent_langgraph
+    09_mcp_tools_and_scan
+    10_observability_langfuse_otel
+    11_semantic_chunking_two_llms
+    12_disk_ann_diskannpy
+
+  09_mcp_tools_and_scan is the cheapest one to actually run: it makes no
+  model calls at all. Good candidate for step 20.
+
+  12_disk_ann_diskannpy uses Python 3.11 rather than 3.12, so it pulls a
+  second base image. Expect that build to take longer.
+
+
+=== STEP 22. 01_stale_index_replay, the compose one ===
+
+  This exercise needs Postgres, so it uses compose rather than a bare
+  container. Four commands, in order.
+
+  Build both services:
+
+  ( cd 01_stale_index_replay && docker compose build )
+
+  Run the app against a healthy database:
+
+  ( cd 01_stale_index_replay && docker compose up --abort-on-container-exit )
+
+  Tear it down, removing containers, volumes AND the locally built image:
+
+  ( cd 01_stale_index_replay && docker compose down -v --rmi local --remove-orphans )
+
+  Confirm it is gone:
+
+  docker ps -a && docker images | grep -i stale
+
+  Expect: no containers, and no image line. The postgres:16 base image
+  stays behind, which is fine - it is shared and worth keeping.
+
+
+=====================================================================
+PHASE E. Cleanup
+=====================================================================
+
+=== STEP 23. Confirm no containers are running or stopped ===
+
+  docker ps -a
+
+  Expect: only the header row.
+  If anything is listed:  docker rm -f $(docker ps -aq)
+
+
+=== STEP 24. Remove any exercise images still present ===
+
+  docker images --format '{{.Repository}}' | grep '^ex_' | xargs -r docker rmi
+
+  Expect: Untagged and Deleted lines, or no output if you removed each
+  one as you went.
+
+
+=== STEP 25. Clear the build cache. This is the big reclaim ===
+
+  docker builder prune -f
+
+  Expect: a "Total reclaimed space" line, often several gigabytes. Build
+  cache survives image deletion, which is why disk stays full otherwise.
+
+
+=== STEP 26. Remove orphaned volumes ===
+
+  docker volume prune -f
+
+  Expect: reclaimed space, usually the Postgres volume from exercise 01.
+
+
+=== STEP 27. Confirm you are back where you started ===
+
+  docker system df
+
+  Compare against step 14. Images, containers and build cache should be
+  at or near the baseline.
+
+
+=== STEP 28. OPTIONAL - reclaim local disk too ===
+
+  The twelve .venv directories are large. Remove them only if you are
+  finished, since the next sweep will have to re-sync everything.
+
+  du -sh [0-9][0-9]_*/.venv 2>/dev/null | tail -1
+
+  To remove:  rm -rf [0-9][0-9]_*/.venv
+
+
+=== STEP 29. OPTIONAL - reset generated exercise state ===
+
+  Each exercise can clean up after itself. This removes indexes, graph
+  output and redacted corpora, but leaves source and .env alone.
+
+  for d in 03_graphrag_fruit_graph 05_pii_erasure_replay 12_disk_ann_diskannpy; do ( cd "$d" && uv run python main.py clean ); done
+
+  Note: doing this to 03 means the next run re-indexes, which costs money
+  again. Leave it alone unless you want a genuinely fresh run.
+
+
+=====================================================================
+PHASE F. When you are ready to publish
+=====================================================================
+
+=== STEP 30. Final check that no secrets would be committed ===
+
+  find . -name ".env" -not -path "*/.venv/*" | wc -l && grep -c "^\.env$" .gitignore
+
+  Expect: 12 and 1. Twelve key files on disk, all covered by one ignore rule.
+
+
+=== STEP 31. Initialise git ===
+
+  git init
+
+=== STEP 32. Stage everything and check what git actually picked up ===
+
+  git add -A && git status --porcelain | wc -l
+
+  Expect: somewhere around 130 files. The number itself matters less than
+  the order of magnitude: if it is in the thousands, .gitignore is not
+  being honoured, so stop and investigate before committing.
+
+
+=== STEP 33. Prove no .env is staged ===
+
+  git status --porcelain | grep -c "\.env$"
+
+  Expect: 0. Not 1, not 12. Zero.
+  If this is anything other than 0, run: git rm --cached <the file>
+
+
+=== STEP 34. Prove the lockfiles ARE staged ===
+
+  git status --porcelain | grep -c "uv\.lock$"
+
+  Expect: 12. uv's guidance is to commit lockfiles, and these exercises
+  pin awkward versions, so anyone cloning needs them.
+
+
+=== STEP 35. First commit ===
+
+  git commit -m "Twelve standalone exercises for the ten RAG problems"
+
+
+=== STEP 36. Connect to the empty GitHub repo and push ===
+
+  git remote add origin https://github.com/kaichaza/ten_new_things_we_need_to_fix_with_rag.git
+
+  git branch -M main
+
+  git push -u origin main
+
+
+=== STEP 37. Verify on the web ===
+
+  Open the repo in a browser. Check that no .env appears anywhere, that
+  all twelve folders are present, and that the README renders.
+
+  If a key ever does reach GitHub: rotate it immediately at
+  platform.openai.com/api-keys. Removing the commit is not enough.

@@ -1,0 +1,14 @@
+[project]
+name = "hybrid-rerank-retrieval"
+version = "0.1.0"
+description = "Similarity is not relevance: BM25 + OpenAI dense fusion, then LLM reranking"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "rank-bm25>=0.2.2",
+    "openai>=1.60.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

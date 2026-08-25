@@ -1,0 +1,15 @@
+[project]
+name = "stale-index-replay"
+version = "0.1.0"
+description = "Stale vector indexes, CDC-style rebuilds and LanceDB time travel"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "lancedb>=0.36.0",
+    "pyarrow>=17.0.0",
+    "openai>=1.60.0",
+    "psycopg[binary]>=3.2.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

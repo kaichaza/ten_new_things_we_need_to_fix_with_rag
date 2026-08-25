@@ -1,0 +1,864 @@
+PROJECT CONTENTS
+Root: /home/kai/gen_ai_topics_practice/03_graphrag_fruit_graph
+Generated: 2026-08-25 05:59:36 CEST
+Files found: 20
+
+Excluded directories: .git __pycache__ .venv venv .pytest_cache .mypy_cache .ruff_cache .ipynb_checkpoints .idea .vscode node_modules dist build .eggs .tox .cache htmlcov *.egg-info .lancedb lancedb .uv
+Lock and cache files are listed by name only.
+Binary files are listed by name and size only.
+Secret files have their contents withheld.
+
+MANIFEST
+  .dockerignore
+  .env
+  .env.example
+  Dockerfile
+  README.md
+  corpus/bruised_basket.txt
+  corpus/customer_ingrid.txt
+  corpus/customer_kwon.txt
+  corpus/customer_tendai.txt
+  corpus/delivery_schedule.txt
+  corpus/grape_rumour_flyer.txt
+  corpus/owner_letter.txt
+  corpus/shop_overview.txt
+  corpus/supplier_notice.txt
+  main.py
+  pyproject.toml
+  settings.yaml
+  setup.sh
+  tests/conftest.py
+  tests/test_graphrag.py
+
+### FILE: .dockerignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.local
+.git/
+.gitignore
+*.log
+input/
+output/
+cache/
+logs/
+### END FILE: .dockerignore
+
+### FILE: .env
+[contents withheld: this file holds credentials]
+### END FILE: .env
+
+### FILE: .env.example
+# Copy this file to .env and add your key.
+#
+#     cp .env.example .env
+#
+# Same OpenAI key as every other exercise in this repository.
+
+OPENAI_API_KEY=sk-your-key-here
+
+# GraphRAG's own config references ${GRAPHRAG_API_KEY}, which is just a
+# variable name rather than a separate service or credential. main.py copies
+# OPENAI_API_KEY into it at import, so setting the line above is enough.
+# Set this instead only if you want a different key for graphrag specifically.
+# GRAPHRAG_API_KEY=sk-your-key-here
+### END FILE: .env.example
+
+### FILE: Dockerfile
+# Everything installs inside the image. Nothing is expected on the host
+# beyond Docker itself.
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+ENV UV_LINK_MODE=copy
+
+# Dependencies first, so editing the corpus or main.py does not invalidate
+# the layer that installs graphrag and its (substantial) dependency tree.
+COPY pyproject.toml ./
+RUN uv sync
+
+COPY . .
+RUN uv sync
+
+# Config check by default: it makes no model calls, so "docker run" without
+# an API key tells you whether the image is sound rather than failing on auth.
+CMD ["uv", "run", "python", "main.py", "doctor"]
+### END FILE: Dockerfile
+
+### FILE: README.md
+# graphrag_fruit_graph
+
+**Theme.** Top-k retrieval is structurally local. "What connects the regular
+customers?" is a property of the whole corpus, and a chunk retriever answers
+it from an arbitrary sample. GraphRAG extracts an entity graph at index time,
+clusters it with hierarchical Leiden, writes a report for every community,
+and answers global questions from summaries of summaries.
+
+**Stack.** graphrag 3.1.1 called through its Python API, pandas for reading
+the parquet artifacts back, OpenAI `gpt-4.1-mini` and `text-embedding-3-small`,
+uv on Python 3.12.
+
+## Run it
+
+    ./setup.sh
+    uv run python main.py doctor    # config check, no model calls, free
+    uv run python main.py walk      # indexes for real: minutes, and cents
+    uv run python main.py graph     # inspect an existing index, free
+    uv run pytest -q                # free tests; see below for the paid one
+    uv run python main.py clean     # remove generated state
+
+    docker build -t graphrag_fruit .
+    docker run --rm graphrag_fruit                                    # doctor
+    docker run --rm --env-file .env graphrag_fruit \
+        uv run python main.py walk
+
+## Two things this version does differently
+
+**No CLI, no subprocess.** `main.py` imports `graphrag.api` and awaits
+`build_index`, `global_search` and `local_search` directly.
+
+**settings.yaml is committed, not scaffolded.** `graphrag init` prompts
+interactively - invisible when output is captured, so it hangs - refuses to
+run when a `.env` exists, and its `--force` flag overwrites `.env` and
+destroys the API key. Every value it generated was overwritten immediately
+anyway, so the file lives under version control instead.
+
+Query calls are assembled by introspecting the real function signatures at
+runtime. GraphRAG's API has moved parameter names between releases; passing
+only what a function accepts survives that, and anything dropped is reported
+rather than silently ignored.
+
+## The corpus, and the distractor
+
+Nine short documents about one fruit shop. Eight are ordinary records. The
+ninth, `grape_rumour_flyer.txt`, restates the grape question almost word for
+word and answers it with a mechanism that is wrong - an allergy. The real
+reason is spread across `supplier_notice.txt` and `owner_letter.txt`, neither
+of which mentions allergy at all.
+
+The flyer will win on lexical similarity, because it contains the question.
+Whether the answer says "allergy" or "failed inspections" tells you whether
+the graph assembled the chain or the retriever simply matched the
+nearest-looking text.
+
+## Cost
+
+`doctor` and `graph` are free. `walk` indexes the corpus with real extraction
+and summarisation calls: a few minutes and a few cents. The walkthrough skips
+re-indexing when `output/` already holds parquet, so subsequent runs only pay
+for the two queries.
+
+The expensive test is opt-in:
+
+    GRAPHRAG_RUN_INDEX=1 uv run pytest -q
+### END FILE: README.md
+
+### FILE: corpus/bruised_basket.txt
+BRUISED FRUIT POLICY
+Fruit that arrives bruised is sold at half price from a basket by the door
+rather than discarded. This is the only exception to the fixed pricing.
+
+The basket is refilled on delivery days and is usually empty by closing.
+Margit considers waste a worse outcome than a thin margin.
+### END FILE: corpus/bruised_basket.txt
+
+### FILE: corpus/customer_ingrid.txt
+CUSTOMER RECORD - INGRID
+Ingrid has shopped here every Monday for eight years, almost always for
+apples. She bakes, and once taught the Saturday staff her apple cake recipe.
+
+She says our apples remind her of her aunt's orchard outside Uppsala. She has
+never once complained about the price.
+### END FILE: corpus/customer_ingrid.txt
+
+### FILE: corpus/customer_kwon.txt
+CUSTOMER RECORD - KWON
+Kwon buys bananas in bulk for his running club, usually six kilograms at a
+time, on Friday afternoons before the weekend long run.
+
+He jokes that the club runs on bananas and that we should sponsor their
+annual race. He has never bought a pear.
+### END FILE: corpus/customer_kwon.txt
+
+### FILE: corpus/customer_tendai.txt
+CUSTOMER RECORD - TENDAI
+Tendai prefers pears above everything and once bought an entire crate before
+a family gathering.
+
+Tendai asks about grapes on most visits and always receives the same answer.
+He has been coming since the shop opened.
+### END FILE: corpus/customer_tendai.txt
+
+### FILE: corpus/delivery_schedule.txt
+DELIVERY SCHEDULE
+Deliveries arrive on Tuesdays and Fridays. Apples come from Uppsala, bananas
+through the Gothenburg wholesaler, and pears from a co-operative in Skane.
+
+Friday deliveries are larger because weekend trade is heavier, which is why
+bulk orders are collected on Friday afternoons.
+### END FILE: corpus/delivery_schedule.txt
+
+### FILE: corpus/grape_rumour_flyer.txt
+NEIGHBOURHOOD NOTICEBOARD - FRUIT GOSSIP
+DATE: 2025-04-01
+
+Several people have asked why the shop refuses to sell grapes.
+
+The answer is simple: the owner is allergic to grapes and cannot handle them.
+This allergy is why the shop refuses to sell grapes, and it has nothing to do
+with suppliers or with quality. The allergy developed after a childhood
+incident involving a vineyard in France.
+
+There is no truth to the rumour about a terminated supply contract.
+### END FILE: corpus/grape_rumour_flyer.txt
+
+### FILE: corpus/owner_letter.txt
+LETTER FROM THE OWNER
+DATE: 2025-03-10
+
+Customers keep asking about grapes, so let me be plain about it.
+
+I will not sell fruit I would not eat myself. After what arrived from
+Vindruva last winter I would not put those grapes in my own kitchen, and I am
+not going to put them in yours. Until I find a grower whose crates I trust,
+this shop does not sell grapes.
+
+Margit
+### END FILE: corpus/owner_letter.txt
+
+### FILE: corpus/shop_overview.txt
+THE FRUIT SHOP - OVERVIEW
+The Fruit Shop has traded on Bergsgatan for twelve years under its founder,
+Margit Lindqvist. It sells exactly three fruits: apples at 3 per kilogram,
+bananas at 2 per kilogram, and pears at 4 per kilogram.
+
+Prices are deliberately simple so children can do the arithmetic. There is no
+discount tier and no loyalty scheme; what is on the sign is what everyone
+pays, including regulars.
+### END FILE: corpus/shop_overview.txt
+
+### FILE: corpus/supplier_notice.txt
+SUPPLIER NOTICE - VINDRUVA AB
+DATE: 2025-03-02
+
+Vindruva AB regrets that three consecutive grape consignments to The Fruit
+Shop failed inspection on arrival. Two crates showed mould at the stem, and
+one had been packed at the wrong temperature during transit.
+
+The Fruit Shop has terminated its supply contract with Vindruva AB. No
+replacement grape supplier has been appointed.
+### END FILE: corpus/supplier_notice.txt
+
+### FILE: main.py
+"""Corpus-level questions via Microsoft GraphRAG, driven from Python.
+
+Top-k retrieval is structurally local. A question whose answer is a property
+of the WHOLE corpus - "what connects the regular customers?" - gets answered
+from an arbitrary sample of chunks. GraphRAG's answer is to extract an entity
+graph at index time, cluster it with hierarchical Leiden, and pre-generate a
+summary for every community, so global questions are answered from summaries
+of summaries.
+
+This exercise uses GraphRAG's Python API. There is no subprocess and no CLI:
+config is loaded with load_config, indexing is await api.build_index, and the
+two query modes are await api.global_search and await api.local_search.
+
+The corpus contains one deliberate distractor - a noticeboard flyer that
+restates the grape question almost verbatim and answers it with the wrong
+mechanism. Watch what each query mode does with it.
+
+Run me:  uv run python main.py walk     full run, indexes if needed
+         uv run python main.py doctor   config check, no model calls, free
+         uv run python main.py graph    inspect an existing index, free
+         uv run python main.py clean    remove generated state
+"""
+from __future__ import annotations
+
+import asyncio
+import inspect
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
+
+HERE = Path(__file__).parent
+CORPUS_DIR = HERE / "corpus"
+INPUT_DIR = HERE / "input"
+OUTPUT_DIR = HERE / "output"
+SETTINGS = HERE / "settings.yaml"
+
+# GraphRAG reads GRAPHRAG_API_KEY. Mirror OPENAI_API_KEY into it so the .env
+# in this folder can follow the same convention as every other exercise.
+if not os.getenv("GRAPHRAG_API_KEY") and os.getenv("OPENAI_API_KEY"):
+    os.environ["GRAPHRAG_API_KEY"] = os.environ["OPENAI_API_KEY"]
+
+GLOBAL_QUESTION = "What connects the shop's regular customers, and what do their habits have in common?"
+LOCAL_QUESTION = "Why does the shop refuse to sell grapes?"
+
+
+# ------------------------------------------------------------------ config --
+def load_graphrag_config():
+    """Load settings.yaml into a GraphRagConfig.
+
+    Imported inside the function rather than at module scope so that
+    "main.py doctor" can report a helpful message if graphrag is missing,
+    instead of dying on an ImportError at the top of the file.
+    """
+    from graphrag.config.load_config import load_config
+
+    return load_config(HERE)
+
+
+def call_with_supported_args(func, **candidates):
+    """Call func with only the keyword arguments it actually accepts.
+
+    GraphRAG's query API has changed parameter names across releases. Rather
+    than pin to one shape and break on the next bump, ask the function what
+    it takes. Anything it does not accept is dropped and reported, so a
+    silently ignored argument cannot go unnoticed.
+    """
+    signature = inspect.signature(func)
+    accepted = set(signature.parameters)
+
+    used = {k: v for k, v in candidates.items() if k in accepted}
+    dropped = sorted(set(candidates) - set(used))
+
+    required = [
+        name for name, p in signature.parameters.items()
+        if p.default is inspect.Parameter.empty
+        and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        and name not in used
+    ]
+    if required:
+        raise TypeError(
+            f"{func.__name__} needs arguments this exercise did not supply: "
+            f"{required}. The installed graphrag version expects a different "
+            f"signature; run 'main.py doctor' to see it."
+        )
+
+    if dropped:
+        print(f"   (not accepted by this version, dropped: {', '.join(dropped)})")
+    return func(**used)
+
+
+# ----------------------------------------------------------------- indexing --
+def prepare_input() -> None:
+    """GraphRAG reads .txt files from input/. Stage the corpus there."""
+    INPUT_DIR.mkdir(exist_ok=True)
+    for source in sorted(CORPUS_DIR.glob("*.txt")):
+        (INPUT_DIR / source.name).write_text(source.read_text())
+    print(f"[prepare] {len(list(INPUT_DIR.glob('*.txt')))} documents staged in input/")
+
+
+def already_indexed() -> bool:
+    return OUTPUT_DIR.exists() and any(OUTPUT_DIR.rglob("*.parquet"))
+
+
+async def build() -> None:
+    """Run the whole pipeline in-process: extract, cluster, summarise.
+
+    One call does entity extraction from each text unit, graph construction,
+    hierarchical Leiden clustering over that graph, and an LLM-written report
+    for every community found. Everything lands in output/ as parquet.
+    """
+    import graphrag.api as api
+
+    config = load_graphrag_config()
+    print("[index] running the pipeline - this makes real model calls")
+
+    results = await api.build_index(config=config)
+
+    failures = [r for r in results if getattr(r, "errors", None)]
+    for result in results:
+        name = getattr(result, "workflow", "?")
+        errors = getattr(result, "errors", None)
+        if errors:
+            print(f"   FAILED  {name}: {errors}")
+        else:
+            print(f"   ok      {name}")
+
+    if failures:
+        raise RuntimeError(f"{len(failures)} workflow(s) failed - see above")
+
+    artifacts = sorted(p.name for p in OUTPUT_DIR.rglob("*.parquet"))
+    print(f"[index] complete - {len(artifacts)} parquet artifacts")
+
+
+# --------------------------------------------------------------- inspection --
+def _table(suffix: str) -> pd.DataFrame | None:
+    """Locate one output table by filename suffix.
+
+    Suffix rather than exact name: older GraphRAG releases prefixed every
+    artifact with create_final_, and this survives either convention.
+    """
+    matches = sorted(OUTPUT_DIR.rglob(f"*{suffix}.parquet"))
+    if not matches:
+        return None
+    return pd.read_parquet(matches[-1])
+
+
+def _column(frame: pd.DataFrame, *candidates: str) -> str | None:
+    for name in candidates:
+        if name in frame.columns:
+            return name
+    return None
+
+
+def inspect_graph() -> None:
+    """Read back what indexing built, without making any model calls."""
+    if not already_indexed():
+        print("[graph] nothing indexed yet - run 'main.py walk' first")
+        return
+
+    print("\n=== What the indexing pipeline built ===")
+    print("  artifacts:", ", ".join(sorted(p.name for p in OUTPUT_DIR.rglob("*.parquet"))))
+
+    entities = _table("entities")
+    relationships = _table("relationships")
+    if entities is not None:
+        print(f"\n  Entities extracted: {len(entities)}")
+    if relationships is not None:
+        print(f"  Relationships:      {len(relationships)}")
+        source = _column(relationships, "source")
+        target = _column(relationships, "target")
+        if source and target:
+            degree = pd.concat([relationships[source], relationships[target]]).value_counts()
+            print("\n  Most connected entities (degree = edges touching the node):")
+            for name, count in degree.head(6).items():
+                print(f"    {count:>3}  {name}")
+
+    communities = _table("communities")
+    if communities is None:
+        print("\n  no communities table found")
+    else:
+        level = _column(communities, "level")
+        members = _column(communities, "entity_ids", "entity_id")
+        if level is None:
+            print(f"\n  Communities: {len(communities)}")
+        else:
+            levels = sorted(communities[level].unique())
+            print(f"\n  Leiden communities: {len(communities)} across {len(levels)} levels")
+            for value in levels:
+                group = communities[communities[level] == value]
+                if members is not None:
+                    sizes = sorted((len(ids) for ids in group[members]), reverse=True)
+                    print(f"    level {value}: {len(group):>2} communities  "
+                          f"(entities each: {', '.join(str(s) for s in sizes)})")
+                else:
+                    print(f"    level {value}: {len(group):>2} communities")
+            print("\n  Level 0 is the coarsest partition; deeper levels subdivide it.")
+
+    reports = _table("community_reports")
+    if reports is not None:
+        title = _column(reports, "title")
+        body = _column(reports, "summary", "full_content", "explanation")
+        print(f"\n  Community reports written: {len(reports)}")
+        if len(reports):
+            row = reports.iloc[0]
+            print("\n  One of them:")
+            if title:
+                print(f"    title: {row[title]}")
+            if body:
+                text = str(row[body]).strip().replace("\n", "\n    ")
+                print(f"    {text[:600]}")
+
+
+# ------------------------------------------------------------------ queries --
+async def ask_global(question: str) -> str:
+    """Answer from community summaries - map over all of them, then reduce.
+
+    This is the mode that can speak to the whole corpus, because the reports
+    it reads were written at index time from the entire graph rather than
+    retrieved in response to the question.
+    """
+    import graphrag.api as api
+
+    config = load_graphrag_config()
+    result = call_with_supported_args(
+        api.global_search,
+        config=config,
+        entities=_table("entities"),
+        communities=_table("communities"),
+        community_reports=_table("community_reports"),
+        community_level=2,
+        dynamic_community_selection=False,
+        response_type="Multiple Paragraphs",
+        query=question,
+    )
+    response, _context = await result
+    return response
+
+
+async def ask_local(question: str) -> str:
+    """Answer from an entity neighbourhood plus the underlying text units.
+
+    Closer to conventional retrieval, and the right mode for a question about
+    one specific thing rather than about the corpus as a whole.
+    """
+    import graphrag.api as api
+
+    config = load_graphrag_config()
+    result = call_with_supported_args(
+        api.local_search,
+        config=config,
+        entities=_table("entities"),
+        communities=_table("communities"),
+        community_reports=_table("community_reports"),
+        text_units=_table("text_units"),
+        relationships=_table("relationships"),
+        covariates=None,
+        community_level=2,
+        response_type="Multiple Paragraphs",
+        query=question,
+    )
+    response, _context = await result
+    return response
+
+
+# ------------------------------------------------------------------ doctor --
+def doctor() -> None:
+    """Check the setup without spending anything."""
+    print("=== doctor: configuration check, no model calls ===\n")
+
+    print(f"  settings.yaml present : {SETTINGS.exists()}")
+    print(f"  corpus documents      : {len(list(CORPUS_DIR.glob('*.txt')))}")
+    print(f"  already indexed       : {already_indexed()}")
+
+    key = os.getenv("GRAPHRAG_API_KEY", "")
+    if key and not key.startswith("sk-your"):
+        print(f"  API key               : present ({key[:6]}...{key[-4:]})")
+    else:
+        print("  API key               : MISSING - copy .env.example to .env and add it")
+
+    try:
+        import graphrag
+        print(f"  graphrag version      : {getattr(graphrag, '__version__', 'unknown')}")
+    except ImportError as error:
+        print(f"  graphrag              : NOT INSTALLED ({error})")
+        return
+
+    try:
+        config = load_graphrag_config()
+        print("  settings.yaml parses  : yes")
+        models = getattr(config, "models", {})
+        for name in models:
+            model = models[name]
+            print(f"      {name}: {getattr(model, 'model', '?')}")
+    except Exception as error:
+        print(f"  settings.yaml parses  : NO - {type(error).__name__}: {error}")
+        return
+
+    # Report the signatures this version actually exposes. If a future release
+    # renames a parameter, this is where you will see it.
+    import graphrag.api as api
+    for name in ("build_index", "global_search", "local_search"):
+        func = getattr(api, name, None)
+        if func is None:
+            print(f"  api.{name:<14}: MISSING from this version")
+        else:
+            params = ", ".join(inspect.signature(func).parameters)
+            print(f"  api.{name:<14}: ({params})")
+
+
+# -------------------------------------------------------------------- walk --
+async def walk() -> None:
+    prepare_input()
+
+    if already_indexed():
+        print("[index] existing output/ found - skipping re-index (main.py clean to redo)")
+    else:
+        await build()
+
+    inspect_graph()
+
+    print("\n=== GLOBAL search: a question about the corpus as a whole ===")
+    print(f"Q: {GLOBAL_QUESTION}\n")
+    print(await ask_global(GLOBAL_QUESTION))
+
+    print("\n=== LOCAL search: a question about one specific thing ===")
+    print(f"Q: {LOCAL_QUESTION}\n")
+    print(await ask_local(LOCAL_QUESTION))
+
+    print("\n" + "=" * 70)
+    print("The corpus contains a noticeboard flyer claiming the owner is allergic")
+    print("to grapes - a document that restates the question almost word for word")
+    print("and answers it with the wrong mechanism. The supplier notice and the")
+    print("owner's letter carry the real reason, and they never mention allergy.")
+    print("Whether the answer above says 'allergy' or 'failed inspections' tells")
+    print("you whether the graph assembled the chain or the retriever matched")
+    print("the question to the nearest-looking text.")
+
+
+def clean() -> None:
+    for path in (INPUT_DIR, OUTPUT_DIR, HERE / "cache", HERE / "logs"):
+        shutil.rmtree(path, ignore_errors=True)
+    print("[clean] removed input/, output/, cache/, logs/ (settings.yaml kept)")
+
+
+if __name__ == "__main__":
+    command = sys.argv[1] if len(sys.argv) > 1 else "walk"
+    if command == "walk":
+        asyncio.run(walk())
+    elif command == "doctor":
+        doctor()
+    elif command == "graph":
+        inspect_graph()
+    elif command == "clean":
+        clean()
+    else:
+        print("Usage: main.py [walk | doctor | graph | clean]")
+### END FILE: main.py
+
+### FILE: pyproject.toml
+[project]
+name = "graphrag-fruit-graph"
+version = "0.1.0"
+description = "Corpus-level questions via GraphRAG's entity graph and Leiden community reports"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Hard pin. GraphRAG's Python API has moved parameter names between
+    # releases, and this exercise calls it directly rather than through the
+    # CLI. main.py introspects signatures so it degrades gracefully, but the
+    # pin is what makes a clone reproducible.
+    "graphrag==3.1.1",
+    "pandas>=2.0.0",
+    "pyarrow>=15.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
+### END FILE: pyproject.toml
+
+### FILE: settings.yaml
+# GraphRAG configuration for the fruit shop exercise.
+#
+# This file is committed on purpose. "graphrag init" would generate one, but
+# it prompts interactively, refuses to run when .env exists, and its --force
+# flag overwrites .env - destroying the API key. Since every generated value
+# was overwritten immediately anyway, keeping the file under version control
+# is simpler and reproducible.
+#
+# No prompt: keys are set, so GraphRAG uses its built-in default prompts.
+
+models:
+  default_chat_model:
+    type: openai_chat
+    api_key: ${GRAPHRAG_API_KEY}
+    model: gpt-4.1-mini
+    model_supports_json: true
+    concurrent_requests: 4
+    async_mode: threaded
+    max_retries: 5
+
+  default_embedding_model:
+    type: openai_embedding
+    api_key: ${GRAPHRAG_API_KEY}
+    model: text-embedding-3-small
+    concurrent_requests: 4
+    async_mode: threaded
+    max_retries: 5
+
+input:
+  type: file
+  file_type: text
+  base_dir: "input"
+
+chunks:
+  size: 400
+  overlap: 50
+  group_by_columns: [id]
+
+output:
+  type: file
+  base_dir: "output"
+
+cache:
+  type: file
+  base_dir: "cache"
+
+reporting:
+  type: file
+  base_dir: "logs"
+
+vector_store:
+  default_vector_store:
+    type: lancedb
+    db_uri: output/lancedb
+    container_name: default
+    overwrite: true
+
+embed_text:
+  model_id: default_embedding_model
+  vector_store_id: default_vector_store
+
+extract_graph:
+  model_id: default_chat_model
+  entity_types: [person, organization, product, policy, location]
+  max_gleanings: 1
+
+summarize_descriptions:
+  model_id: default_chat_model
+  max_length: 500
+
+community_reports:
+  model_id: default_chat_model
+  max_length: 2000
+  max_input_length: 8000
+
+# Small corpus, so keep communities small enough that Leiden produces more
+# than one. The default of 10 collapses this corpus into a single cluster.
+cluster_graph:
+  max_cluster_size: 6
+
+local_search:
+  chat_model_id: default_chat_model
+  embedding_model_id: default_embedding_model
+
+global_search:
+  chat_model_id: default_chat_model
+### END FILE: settings.yaml
+
+### FILE: setup.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+  exit 1
+fi
+
+uv python install 3.12
+
+if [ ! -f .env ]; then
+  cp .env.example .env
+  echo ">> Created .env - add your key before running anything that costs money."
+fi
+
+uv sync
+
+echo
+echo "Check the setup (free, no model calls):"
+echo "  uv run python main.py doctor"
+echo
+echo "Full run (indexes for real - a few minutes, a few cents):"
+echo "  uv run python main.py walk"
+echo
+echo "Inspect an existing index (free):"
+echo "  uv run python main.py graph"
+echo
+echo "Containerised:"
+echo "  docker build -t graphrag_fruit ."
+echo "  docker run --rm graphrag_fruit                          # doctor, free"
+echo "  docker run --rm --env-file .env graphrag_fruit uv run python main.py walk"
+### END FILE: setup.sh
+
+### FILE: tests/conftest.py
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
+### END FILE: tests/conftest.py
+
+### FILE: tests/test_graphrag.py
+"""Tests split by cost: the free ones always run, the expensive one is opt-in.
+
+Indexing this corpus takes minutes and spends real money, so it is not run
+on every invocation. Set GRAPHRAG_RUN_INDEX=1 to include it.
+"""
+import inspect
+import os
+
+import pytest
+
+import main
+
+requires_key = pytest.mark.skipif(
+    not os.getenv("GRAPHRAG_API_KEY") and not os.getenv("OPENAI_API_KEY"),
+    reason="no API key set",
+)
+requires_index = pytest.mark.skipif(
+    os.getenv("GRAPHRAG_RUN_INDEX") != "1",
+    reason="set GRAPHRAG_RUN_INDEX=1 to run the indexing test (costs money)",
+)
+
+
+def test_corpus_is_present_and_includes_the_distractor():
+    documents = list(main.CORPUS_DIR.glob("*.txt"))
+    assert len(documents) >= 8
+
+    flyer = (main.CORPUS_DIR / "grape_rumour_flyer.txt").read_text().lower()
+    assert "allergic" in flyer, "the distractor must offer a wrong mechanism"
+
+    truth = (main.CORPUS_DIR / "supplier_notice.txt").read_text().lower()
+    assert "inspection" in truth
+    assert "allerg" not in truth, "the true documents must never mention allergy"
+
+
+def test_settings_parse_without_calling_a_model():
+    """The config must load offline. This is the check that used to be a
+    scaffolding step, and it costs nothing."""
+    config = main.load_graphrag_config()
+    assert config is not None
+    assert getattr(config, "models", None), "settings.yaml declared no models"
+
+
+def test_the_api_exposes_what_this_exercise_calls():
+    """Guard against a version bump renaming the functions out from under us."""
+    import graphrag.api as api
+
+    for name in ("build_index", "global_search", "local_search"):
+        assert hasattr(api, name), f"graphrag.api has no {name} in this version"
+        assert inspect.signature(getattr(api, name)).parameters
+
+
+def test_prepare_input_stages_the_corpus():
+    main.prepare_input()
+    staged = list(main.INPUT_DIR.glob("*.txt"))
+    assert len(staged) == len(list(main.CORPUS_DIR.glob("*.txt")))
+
+
+def test_inspect_graph_is_safe_with_no_index(capsys):
+    main.inspect_graph()
+    assert capsys.readouterr().out
+
+
+@requires_key
+@requires_index
+@pytest.mark.asyncio
+async def test_index_builds_and_both_query_modes_answer():
+    main.prepare_input()
+    if not main.already_indexed():
+        await main.build()
+    assert main.already_indexed()
+
+    communities = main._table("communities")
+    assert communities is not None and len(communities) > 0, "Leiden found nothing"
+
+    reports = main._table("community_reports")
+    assert reports is not None and len(reports) > 0
+
+    answer = (await main.ask_global(main.GLOBAL_QUESTION)).lower()
+    assert any(name in answer for name in ("ingrid", "kwon", "tendai"))
+### END FILE: tests/test_graphrag.py
+
+### SUMMARY
+Included in full : 19
+Binary, name only: 0
+Skipped          : 0
+Secrets withheld : 1
+Oversize         : 0

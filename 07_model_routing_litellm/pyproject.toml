@@ -1,0 +1,12 @@
+[project]
+name = "model-routing-litellm"
+version = "0.1.0"
+description = "Cost tiers and escalation: cheap model first, strong model on demand"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "litellm>=1.95.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

@@ -1,0 +1,15 @@
+[project]
+name = "rag-eval-ragas"
+version = "0.1.0"
+description = "Faithfulness as a regression metric: Ragas over a real RAG pipeline"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ragas>=0.4.0",
+    "langchain-openai>=1.0.0",
+    "openai>=1.60.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

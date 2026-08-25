@@ -1,0 +1,14 @@
+[project]
+name = "injection-defence-llm-guard"
+version = "0.1.0"
+description = "The corpus as an attack surface: scanning retrieved content with llm-guard"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "llm-guard>=0.3.16",
+    "openai>=1.60.0",
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

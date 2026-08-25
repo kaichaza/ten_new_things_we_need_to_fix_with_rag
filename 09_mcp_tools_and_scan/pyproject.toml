@@ -1,0 +1,28 @@
+[project]
+name = "mcp-tools-and-scan"
+version = "0.1.0"
+description = "MCP tool trust: description pinning, drift detection, and scanning"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Pinned to the 1.x line deliberately. MCP SDK 2.0.0 renamed FastMCP to
+    # MCPServer and moved mcp.server.fastmcp to mcp.server.mcpserver, so
+    # server.py does not import under 2.x. The SDK's migration guide tells
+    # dependent packages to hold a <2 bound until they have migrated, and
+    # gives this exact range as the example.
+    # Migrating server.py to MCPServer is the eventual fix.
+    "mcp>=1.28.0,<2.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+# mcp-scan is deliberately NOT a dependency. It pulls snyk-agent-scan, whose
+# transitive pin on mcp[cli] is what made this project unresolvable. Nothing
+# here imports it - it is a command line tool - so run it without installing
+# it into this environment:
+#
+#     uvx mcp-scan
+#
+# That keeps the scanner available without letting its pins decide which MCP
+# SDK this exercise may use.
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

@@ -1,0 +1,14 @@
+[project]
+name = "bounded-agent-langgraph"
+version = "0.1.0"
+description = "Bounded autonomy: budgets, checkpoints, and a gate before consequential actions"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "langgraph>=1.2.0",
+    "langchain-openai>=1.0.0",
+    "langchain-core>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
