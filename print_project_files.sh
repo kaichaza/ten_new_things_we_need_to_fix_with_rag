@@ -31,6 +31,9 @@ PRUNE_DIRS=(
     "__pycache__"
     ".venv"
     "venv"
+    "logs"
+    "data"
+    "*.lance"
     ".pytest_cache"
     ".mypy_cache"
     ".ruff_cache"
@@ -74,6 +77,7 @@ SKIP_BY_GLOB=(
     "*.a"
     "*.class"
     "*.lance"
+    "*.log"
 )
 
 # ---------------------------------------------------------------------------
