@@ -3,8 +3,8 @@
 # run_all_exercises.sh
 #
 # Runs every exercise in the repository as its own isolated uv project, brings
-# up any Docker services an exercise depends on, runs its pytest suite, tears
-# everything back down, and prints one report at the end.
+# up any Docker services an exercise depends on, runs its pytest suite, stops
+# the services again, and prints one report at the end.
 #
 # Getting it onto the machine and running it:
 #
@@ -12,8 +12,11 @@
 #     chmod +x run_all_exercises.sh
 #     ./run_all_exercises.sh
 #
-# Nothing is left running afterwards. A failure in one exercise is recorded
-# and the run moves on to the next one; it never aborts the whole sweep.
+# Nothing is left RUNNING afterwards, but nothing is ever deleted either:
+# containers are stopped, not removed, and volumes are always kept. These
+# containers hold vector indexes and graphs that cost real money to build.
+# A failure in one exercise is recorded and the run moves on to the next
+# one; it never aborts the whole sweep.
 #
 # Options:
 #     --dry-run           show the plan, run nothing
@@ -86,14 +89,25 @@ rule() {
 # Postgres container.
 # ---------------------------------------------------------------------------
 STARTED_COMPOSE_IN=""
+STARTED_NEO4J_CONTAINER=""
 
 cleanup() {
     local exit_code=$?
     if [ -n "$STARTED_COMPOSE_IN" ] && [ "$KEEP_SERVICES" = "no" ]; then
-        printf '\nStopping Docker services in %s...\n' "$STARTED_COMPOSE_IN" | tee -a "$LOG"
-        ( cd "$STARTED_COMPOSE_IN" && docker compose down -v --remove-orphans ) \
-            >> "$LOG" 2>&1
+        # Stop, never 'down': these containers hold built indexes and other
+        # expensive state, so containers and volumes are always kept.
+        printf '\nStopping Docker services in %s (containers and volumes kept)...\n' \
+            "$STARTED_COMPOSE_IN" | tee -a "$LOG"
+        ( cd "$STARTED_COMPOSE_IN" && docker compose stop ) >> "$LOG" 2>&1
         STARTED_COMPOSE_IN=""
+    fi
+    if [ -n "$STARTED_NEO4J_CONTAINER" ] && [ "$KEEP_SERVICES" = "no" ]; then
+        # Same rule: stop only. The container and its volume belong to the
+        # exercise's own setup script and may hold a paid-for index.
+        printf '\nStopping Neo4j container %s (container and volume kept)...\n' \
+            "$STARTED_NEO4J_CONTAINER" | tee -a "$LOG"
+        docker stop "$STARTED_NEO4J_CONTAINER" >> "$LOG" 2>&1
+        STARTED_NEO4J_CONTAINER=""
     fi
     exit $exit_code
 }
@@ -163,6 +177,16 @@ EXERCISES=(
     "11_semantic_chunking_two_llms"
     "12_disk_ann_diskannpy"
 )
+
+# 03_graphrag_fruit_graph does not use docker compose; it talks to the same
+# long-lived Neo4j container its own setup script manages (GDS + APOC plugins,
+# data in a named volume). The names here must match that setup script. This
+# sweep may start or create the container, and may stop it again if it was
+# the one that started it, but it NEVER removes the container or the volume:
+# the volume can hold an index that cost real money to build.
+NEO4J_CONTAINER="neo4j-fruit-graph"
+NEO4J_VOLUME="neo4j-fruit-graph-data"
+NEO4J_IMAGE="neo4j:5.26"
 
 log "exercises expected: ${#EXERCISES[@]}"
 
@@ -234,8 +258,9 @@ done
 log ""
 if [ "$KEY_PRESENT" = "yes" ]; then
     log "NOTE: a real OPENAI_API_KEY was found. Suites that need one will make"
-    log "      billable calls. 03_graphrag_fruit_graph in particular indexes its"
-    log "      corpus, which takes minutes and costs a few cents."
+    log "      billable calls. 03_graphrag_fruit_graph only runs its expensive"
+    log "      indexing test when GRAPHRAG_RUN_INDEX=1 is also set; without it"
+    log "      that test skips, and the free Neo4j checks still run."
 else
     log "NOTE: no real OPENAI_API_KEY found. Suites needing one will report as"
     log "      skipped, which is the designed behaviour rather than a failure."
@@ -400,7 +425,8 @@ run_exercise() {
         if [ "$compose_rc" -ne 0 ]; then
             log "  ERROR - could not start Docker services (exit $compose_rc). Dropping this exercise."
             report_output "docker compose up" "$out"
-            ( cd "$workdir" && docker compose down -v --remove-orphans ) >> "$LOG" 2>&1
+            # Stop whatever half-started; containers and volumes are kept.
+            ( cd "$workdir" && docker compose stop ) >> "$LOG" 2>&1
             ended=$(date +%s); elapsed=$((ended - started))
             record "$exercise" "ERROR" "docker compose up failed (exit $compose_rc)" "$elapsed"
             rm -f "$out"; return
@@ -409,6 +435,89 @@ run_exercise() {
         log_only "----- docker compose up output -----"
         cat "$out" >> "$LOG"
         log "  services healthy"
+    fi
+
+    # -- Neo4j container for the graphrag exercise ------------------------
+    # 03_graphrag_fruit_graph has no compose file on purpose: its tests talk
+    # to the long-lived container the exercise's setup script manages, so an
+    # index built with real model calls survives between sweeps. Reuse that
+    # container here. Running: leave it alone before and after. Stopped:
+    # start it, stop it again after the tests. Absent: create it exactly the
+    # way the setup script does (both plugins), and stop - not remove - it
+    # afterwards.
+    local started_neo4j="no"
+    if [ "$exercise" = "03_graphrag_fruit_graph" ]; then
+        if [ "$DOCKER_OK" != "yes" ]; then
+            log "  SKIP - needs the Neo4j container but docker is unavailable"
+            ended=$(date +%s); elapsed=$((ended - started))
+            record "$exercise" "SKIP" "docker unavailable, needs Neo4j" "$elapsed"
+            rm -f "$out"; return
+        fi
+
+        # The password comes from the exercise .env, which is always present.
+        local neo4j_password
+        neo4j_password="$(grep -E '^NEO4J_PASSWORD=' "$workdir/.env" | head -1 | cut -d= -f2-)"
+
+        if docker ps --format '{{.Names}}' | grep -qx "$NEO4J_CONTAINER"; then
+            log "  Neo4j container already running - it will be left running afterwards"
+        elif docker ps -a --format '{{.Names}}' | grep -qx "$NEO4J_CONTAINER"; then
+            log "  starting existing Neo4j container..."
+            docker start "$NEO4J_CONTAINER" > "$out" 2>&1
+            started_neo4j="yes"
+        else
+            log "  creating Neo4j container ($NEO4J_IMAGE, GDS + APOC, volume $NEO4J_VOLUME)..."
+            docker run -d \
+                --name "$NEO4J_CONTAINER" \
+                -p 7474:7474 -p 7687:7687 \
+                -e NEO4J_AUTH="neo4j/$neo4j_password" \
+                -e NEO4J_PLUGINS='["graph-data-science","apoc"]' \
+                -e NEO4J_dbms_security_procedures_unrestricted='gds.*,apoc.*' \
+                -v "$NEO4J_VOLUME:/data" \
+                "$NEO4J_IMAGE" > "$out" 2>&1
+            started_neo4j="yes"
+        fi
+        if [ "$started_neo4j" = "yes" ]; then
+            STARTED_NEO4J_CONTAINER="$NEO4J_CONTAINER"
+        fi
+
+        # Wait for bolt. A first boot downloads the plugin jars, so this can
+        # legitimately take a couple of minutes.
+        log "  waiting for Neo4j to answer on bolt..."
+        local neo4j_ready="no"
+        local attempt=0
+        while [ "$attempt" -lt 60 ]; do
+            if docker exec "$NEO4J_CONTAINER" cypher-shell -u neo4j -p "$neo4j_password" \
+                    "RETURN 1" >/dev/null 2>&1; then
+                neo4j_ready="yes"
+                break
+            fi
+            sleep 3
+            attempt=$((attempt + 1))
+        done
+        if [ "$neo4j_ready" != "yes" ]; then
+            log "  ERROR - Neo4j did not become ready. Dropping this exercise."
+            log "          inspect with: docker logs $NEO4J_CONTAINER"
+            ended=$(date +%s); elapsed=$((ended - started))
+            record "$exercise" "ERROR" "Neo4j container did not become ready" "$elapsed"
+            rm -f "$out"; return
+        fi
+
+        # The pipeline needs BOTH plugins: GDS for Leiden, APOC for the graph
+        # writer and the entity resolver. A container created before APOC was
+        # added would make the tests fail with confusing procedure-not-found
+        # errors, so check up front and give recreation instructions instead.
+        if ! docker exec "$NEO4J_CONTAINER" cypher-shell -u neo4j -p "$neo4j_password" \
+                "RETURN gds.version(), apoc.version()" >/dev/null 2>&1; then
+            log "  ERROR - GDS and/or APOC is missing from the Neo4j container."
+            log "          Recreate it with both plugins and rerun:"
+            log "            docker rm -f $NEO4J_CONTAINER"
+            log "          (the data volume is kept; rerun the exercise setup"
+            log "          script, or simply rerun this sweep, to recreate it)"
+            ended=$(date +%s); elapsed=$((ended - started))
+            record "$exercise" "ERROR" "Neo4j container missing GDS/APOC" "$elapsed"
+            rm -f "$out"; return
+        fi
+        log "  Neo4j ready (GDS + APOC present)"
     fi
 
     # -- optional image build check --------------------------------------
@@ -442,11 +551,22 @@ run_exercise() {
     cat "$out" >> "$LOG"
     log_only "----- end pytest output -----"
 
-    # -- tear services back down -----------------------------------------
+    # -- stop services again ----------------------------------------------
+    # Stop, never 'down': every service container here carries built state
+    # (LanceDB indexes, graphs) that is expensive to rebuild. Containers and
+    # volumes are always kept; only the running state is wound back.
     if [ "$uses_compose" = "yes" ] && [ "$KEEP_SERVICES" = "no" ]; then
-        log "  stopping Docker services..."
-        ( cd "$workdir" && docker compose down -v --remove-orphans ) >> "$LOG" 2>&1
+        log "  stopping Docker services (containers and volumes kept)..."
+        ( cd "$workdir" && docker compose stop ) >> "$LOG" 2>&1
         STARTED_COMPOSE_IN=""
+    fi
+
+    if [ "$started_neo4j" = "yes" ] && [ "$KEEP_SERVICES" = "no" ]; then
+        # This sweep started (or created) the container, so put it back to
+        # stopped. The container and its data volume are kept.
+        log "  stopping Neo4j container (container and volume kept)..."
+        docker stop "$NEO4J_CONTAINER" >> "$LOG" 2>&1
+        STARTED_NEO4J_CONTAINER=""
     fi
 
     ended=$(date +%s); elapsed=$((ended - started))
@@ -486,6 +606,9 @@ if [ "$DRY_RUN" = "yes" ]; then
             services=""
             if [ -f "$exercise/docker-compose.yml" ]; then
                 services=" [needs Docker services]"
+            fi
+            if [ "$exercise" = "03_graphrag_fruit_graph" ]; then
+                services=" [needs Neo4j container: $NEO4J_CONTAINER]"
             fi
             log "  would run  $exercise$services"
         else

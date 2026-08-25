@@ -1,0 +1,23 @@
+[project]
+name = "graphrag-fruit-graph"
+version = "0.2.0"
+description = "Corpus-level questions via an entity graph, hierarchical Leiden and community reports - on Neo4j"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # First-party Neo4j GraphRAG package. Loose upper bound: the KG builder
+    # lives under an experimental namespace and parameter names have moved
+    # between releases, which is why main.py introspects signatures instead
+    # of pinning hard. Tighten this once the whitepaper run is frozen.
+    "neo4j-graphrag[openai]>=1.6,<2",
+    "neo4j>=5.19",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
