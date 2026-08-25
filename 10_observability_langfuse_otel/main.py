@@ -125,15 +125,31 @@ def langfuse_enabled() -> bool:
 
 
 def ship_to_langfuse(question: str) -> str | None:
-    """Run the same pipeline under a Langfuse span. Langfuse's SDK v3 is
-    built ON OpenTelemetry, so this nests naturally with our spans and the
-    trace appears in the Langfuse UI with the model call as a child."""
+    """Run the same pipeline under a Langfuse span. Langfuse's SDK is built
+    ON OpenTelemetry, so this nests naturally with our spans and the trace
+    appears in the Langfuse UI with the model call as a child.
+
+    Version note (pitfall 12, in this very exercise): SDK v3 exposed
+    start_as_current_span; v4 - which pyproject pins - renamed it to
+    start_as_current_observation(as_type="span"). Verified against 4.14.5.
+    The if/else keeps the exercise honest on either major rather than
+    crashing on a method name.
+    """
     if not langfuse_enabled():
         return None
     from langfuse import get_client
 
     lf = get_client()
-    with lf.start_as_current_span(name="fruit-shop-rag-request") as lf_span:
+    if hasattr(lf, "start_as_current_observation"):
+        # SDK v4 path: one method for all observation types, span by default.
+        span_context = lf.start_as_current_observation(
+            name="fruit-shop-rag-request", as_type="span"
+        )
+    else:
+        # SDK v3 path, kept for anyone running with the older major installed.
+        span_context = lf.start_as_current_span(name="fruit-shop-rag-request")
+
+    with span_context as lf_span:
         contexts = retrieve(question)
         answer = generate(question, contexts)
         lf_span.update(input=question, output=answer)
@@ -162,7 +178,7 @@ def walk() -> None:
     else:
         print("\n[langfuse] keys not set - skipped. Add LANGFUSE_PUBLIC_KEY and "
               "LANGFUSE_SECRET_KEY to .env to ship this trace to Langfuse Cloud; "
-              "its SDK v3 rides the same OpenTelemetry plumbing you just saw.")
+              "its SDK rides the same OpenTelemetry plumbing you just saw.")
 
 
 if __name__ == "__main__":

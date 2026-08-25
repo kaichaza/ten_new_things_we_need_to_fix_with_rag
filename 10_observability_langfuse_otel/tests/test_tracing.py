@@ -41,3 +41,14 @@ def test_model_span_carries_genai_semantic_conventions():
     assert attrs["gen_ai.provider.name"] == "openai"
     assert attrs["gen_ai.usage.input_tokens"] > 0
     assert attrs["gen_ai.usage.output_tokens"] > 0
+
+
+def test_langfuse_client_exposes_what_ship_to_langfuse_calls():
+    """The walkthrough crashed on 2026-08-25 because pyproject pinned SDK v4
+    while the code called v3's start_as_current_span. Guard the surface: the
+    installed client must expose one of the two names the code handles."""
+    from langfuse import Langfuse
+
+    v4 = hasattr(Langfuse, "start_as_current_observation")
+    v3 = hasattr(Langfuse, "start_as_current_span")
+    assert v4 or v3, "langfuse client exposes neither span API this exercise handles"

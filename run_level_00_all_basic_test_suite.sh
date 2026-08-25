@@ -89,7 +89,9 @@ rule() {
 # Postgres container.
 # ---------------------------------------------------------------------------
 STARTED_COMPOSE_IN=""
-STARTED_NEO4J_CONTAINER=""
+# Space-separated list: this sweep can start more than one long-lived Neo4j
+# container (03's graph container and 13's temporal container).
+STARTED_NEO4J_CONTAINERS=""
 
 cleanup() {
     local exit_code=$?
@@ -101,13 +103,15 @@ cleanup() {
         ( cd "$STARTED_COMPOSE_IN" && docker compose stop ) >> "$LOG" 2>&1
         STARTED_COMPOSE_IN=""
     fi
-    if [ -n "$STARTED_NEO4J_CONTAINER" ] && [ "$KEEP_SERVICES" = "no" ]; then
-        # Same rule: stop only. The container and its volume belong to the
-        # exercise's own setup script and may hold a paid-for index.
-        printf '\nStopping Neo4j container %s (container and volume kept)...\n' \
-            "$STARTED_NEO4J_CONTAINER" | tee -a "$LOG"
-        docker stop "$STARTED_NEO4J_CONTAINER" >> "$LOG" 2>&1
-        STARTED_NEO4J_CONTAINER=""
+    if [ -n "$STARTED_NEO4J_CONTAINERS" ] && [ "$KEEP_SERVICES" = "no" ]; then
+        # Same rule: stop only. The containers and their volumes belong to
+        # the exercises' own setup scripts and may hold paid-for indexes.
+        for started_container in $STARTED_NEO4J_CONTAINERS; do
+            printf '\nStopping Neo4j container %s (container and volume kept)...\n' \
+                "$started_container" | tee -a "$LOG"
+            docker stop "$started_container" >> "$LOG" 2>&1
+        done
+        STARTED_NEO4J_CONTAINERS=""
     fi
     exit $exit_code
 }
@@ -176,6 +180,7 @@ EXERCISES=(
     "10_observability_langfuse_otel"
     "11_semantic_chunking_two_llms"
     "12_disk_ann_diskannpy"
+    "13_temporal_bitemporal_graphiti"
 )
 
 # 03_graphrag_fruit_graph does not use docker compose; it talks to the same
@@ -187,6 +192,13 @@ EXERCISES=(
 NEO4J_CONTAINER="neo4j-fruit-graph"
 NEO4J_VOLUME="neo4j-fruit-graph-data"
 NEO4J_IMAGE="neo4j:5.26"
+
+# 13_temporal_bitemporal_graphiti has its OWN Neo4j container on shifted
+# ports (7475/7688), managed by its setup script - Community Edition runs
+# one database per instance, so the two graph exercises never share. Same
+# rules: reuse, start if stopped, create if absent, stop only, never remove.
+TEMPORAL_CONTAINER="neo4j-temporal-graph"
+TEMPORAL_VOLUME="neo4j-temporal-graph-data"
 
 log "exercises expected: ${#EXERCISES[@]}"
 
@@ -258,9 +270,10 @@ done
 log ""
 if [ "$KEY_PRESENT" = "yes" ]; then
     log "NOTE: a real OPENAI_API_KEY was found. Suites that need one will make"
-    log "      billable calls. 03_graphrag_fruit_graph only runs its expensive"
-    log "      indexing test when GRAPHRAG_RUN_INDEX=1 is also set; without it"
-    log "      that test skips, and the free Neo4j checks still run."
+    log "      billable calls. 03 and 13 only run their expensive indexing and"
+    log "      ingestion tests when GRAPHRAG_RUN_INDEX=1 / TEMPORAL_RUN_INDEX=1"
+    log "      are also set; without them those tests skip, and the free Neo4j"
+    log "      checks still run."
 else
     log "NOTE: no real OPENAI_API_KEY found. Suites needing one will report as"
     log "      skipped, which is the designed behaviour rather than a failure."
@@ -446,6 +459,7 @@ run_exercise() {
     # way the setup script does (both plugins), and stop - not remove - it
     # afterwards.
     local started_neo4j="no"
+    local exercise_neo4j=""
     if [ "$exercise" = "03_graphrag_fruit_graph" ]; then
         if [ "$DOCKER_OK" != "yes" ]; then
             log "  SKIP - needs the Neo4j container but docker is unavailable"
@@ -476,8 +490,9 @@ run_exercise() {
                 "$NEO4J_IMAGE" > "$out" 2>&1
             started_neo4j="yes"
         fi
+        exercise_neo4j="$NEO4J_CONTAINER"
         if [ "$started_neo4j" = "yes" ]; then
-            STARTED_NEO4J_CONTAINER="$NEO4J_CONTAINER"
+            STARTED_NEO4J_CONTAINERS="$STARTED_NEO4J_CONTAINERS $NEO4J_CONTAINER"
         fi
 
         # Wait for bolt. A first boot downloads the plugin jars, so this can
@@ -518,6 +533,67 @@ run_exercise() {
             rm -f "$out"; return
         fi
         log "  Neo4j ready (GDS + APOC present)"
+    fi
+
+    # -- Neo4j container for the temporal graphiti exercise ---------------
+    # Same reuse rules as 03, but a different container: 13's own setup
+    # script manages neo4j-temporal-graph on ports 7475/7688 (APOC only -
+    # graphiti needs neither GDS nor a plugin check to answer bolt).
+    if [ "$exercise" = "13_temporal_bitemporal_graphiti" ]; then
+        if [ "$DOCKER_OK" != "yes" ]; then
+            log "  SKIP - needs the temporal Neo4j container but docker is unavailable"
+            ended=$(date +%s); elapsed=$((ended - started))
+            record "$exercise" "SKIP" "docker unavailable, needs Neo4j" "$elapsed"
+            rm -f "$out"; return
+        fi
+
+        # The password comes from the exercise .env, which is always present.
+        local temporal_password
+        temporal_password="$(grep -E '^NEO4J_PASSWORD=' "$workdir/.env" | head -1 | cut -d= -f2-)"
+
+        if docker ps --format '{{.Names}}' | grep -qx "$TEMPORAL_CONTAINER"; then
+            log "  temporal Neo4j container already running - left running afterwards"
+        elif docker ps -a --format '{{.Names}}' | grep -qx "$TEMPORAL_CONTAINER"; then
+            log "  starting existing temporal Neo4j container..."
+            docker start "$TEMPORAL_CONTAINER" > "$out" 2>&1
+            started_neo4j="yes"
+        else
+            log "  creating temporal Neo4j container ($NEO4J_IMAGE, APOC, volume $TEMPORAL_VOLUME)..."
+            docker run -d \
+                --name "$TEMPORAL_CONTAINER" \
+                -p 7475:7474 -p 7688:7687 \
+                -e NEO4J_AUTH="neo4j/$temporal_password" \
+                -e NEO4J_PLUGINS='["apoc"]' \
+                -e NEO4J_dbms_security_procedures_unrestricted='apoc.*' \
+                -v "$TEMPORAL_VOLUME:/data" \
+                "$NEO4J_IMAGE" > "$out" 2>&1
+            started_neo4j="yes"
+        fi
+        exercise_neo4j="$TEMPORAL_CONTAINER"
+        if [ "$started_neo4j" = "yes" ]; then
+            STARTED_NEO4J_CONTAINERS="$STARTED_NEO4J_CONTAINERS $TEMPORAL_CONTAINER"
+        fi
+
+        log "  waiting for temporal Neo4j to answer on bolt..."
+        local temporal_ready="no"
+        local temporal_attempt=0
+        while [ "$temporal_attempt" -lt 60 ]; do
+            if docker exec "$TEMPORAL_CONTAINER" cypher-shell -u neo4j -p "$temporal_password" \
+                    "RETURN 1" >/dev/null 2>&1; then
+                temporal_ready="yes"
+                break
+            fi
+            sleep 3
+            temporal_attempt=$((temporal_attempt + 1))
+        done
+        if [ "$temporal_ready" != "yes" ]; then
+            log "  ERROR - temporal Neo4j did not become ready. Dropping this exercise."
+            log "          inspect with: docker logs $TEMPORAL_CONTAINER"
+            ended=$(date +%s); elapsed=$((ended - started))
+            record "$exercise" "ERROR" "temporal Neo4j container did not become ready" "$elapsed"
+            rm -f "$out"; return
+        fi
+        log "  temporal Neo4j ready"
     fi
 
     # -- optional image build check --------------------------------------
@@ -563,10 +639,11 @@ run_exercise() {
 
     if [ "$started_neo4j" = "yes" ] && [ "$KEEP_SERVICES" = "no" ]; then
         # This sweep started (or created) the container, so put it back to
-        # stopped. The container and its data volume are kept.
-        log "  stopping Neo4j container (container and volume kept)..."
-        docker stop "$NEO4J_CONTAINER" >> "$LOG" 2>&1
-        STARTED_NEO4J_CONTAINER=""
+        # stopped. The container and its data volume are kept. (The cleanup
+        # trap tolerates an already-stopped container, so the list needs no
+        # pruning here.)
+        log "  stopping Neo4j container $exercise_neo4j (container and volume kept)..."
+        docker stop "$exercise_neo4j" >> "$LOG" 2>&1
     fi
 
     ended=$(date +%s); elapsed=$((ended - started))
@@ -609,6 +686,9 @@ if [ "$DRY_RUN" = "yes" ]; then
             fi
             if [ "$exercise" = "03_graphrag_fruit_graph" ]; then
                 services=" [needs Neo4j container: $NEO4J_CONTAINER]"
+            fi
+            if [ "$exercise" = "13_temporal_bitemporal_graphiti" ]; then
+                services=" [needs Neo4j container: $TEMPORAL_CONTAINER]"
             fi
             log "  would run  $exercise$services"
         else

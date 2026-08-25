@@ -60,6 +60,12 @@ lancedb/
 # of the exercise is that it is rebuilt rather than shipped.
 12_disk_ann_diskannpy/data/
 
+13_temporal_bitemporal_graphiti/
+        run_integration_suite.sh
+        run_level_00_all_basic_test_suite.sh
+        run_level_01_integration_test_suite.sh
+        setup_temporal_graphiti.sh
+
 # Generic parquet catch-all for anything a pipeline drops outside the paths
 # named above. Remove this line if you ever want to commit a fixture.
 *.parquet
@@ -71,6 +77,7 @@ project_contents.txt
 # run_all_exercises.sh - test transcripts.
 test_run.log
 test_run.log.*
+logs/
 
 # ---------------------------------------------------------------------------
 # Editors and operating systems.
