@@ -37,16 +37,10 @@ data/
 .lancedb/
 lancedb/
 
-# 03_graphrag_fruit_graph - everything the indexing pipeline touches.
-# input/ is a copy of corpus/ as .txt, output/ is the parquet artifacts
-# (entities, relationships, communities, community reports), and
-# settings.yaml is scaffolded by 'graphrag init' then patched at runtime.
-03_graphrag_fruit_graph/input/
-03_graphrag_fruit_graph/output/
-03_graphrag_fruit_graph/settings.yaml
-03_graphrag_fruit_graph/cache/
-03_graphrag_fruit_graph/logs/
-03_graphrag_fruit_graph/.env.graphrag
+# 03_graphrag_fruit_graph and 13_temporal_bitemporal_graphiti keep all
+# their generated state inside their Neo4j docker volumes
+# (neo4j-fruit-graph-data, neo4j-temporal-graph-data), so there is
+# nothing on disk to ignore for either.
 
 # 05_pii_erasure_replay - the redacted copy of the corpus, written during the
 # erasure walkthrough. It is derived from corpus/, which IS committed.
@@ -59,12 +53,6 @@ lancedb/
 # 12_disk_ann_diskannpy - the on-disk ANN index. Binary, and the whole point
 # of the exercise is that it is rebuilt rather than shipped.
 12_disk_ann_diskannpy/data/
-
-13_temporal_bitemporal_graphiti/
-        run_integration_suite.sh
-        run_level_00_all_basic_test_suite.sh
-        run_level_01_integration_test_suite.sh
-        setup_temporal_graphiti.sh
 
 # Generic parquet catch-all for anything a pipeline drops outside the paths
 # named above. Remove this line if you ever want to commit a fixture.

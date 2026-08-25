@@ -1,4 +1,4 @@
-RUNBOOK: testing all twelve exercises, locally then in Docker
+RUNBOOK: testing all thirteen exercises, locally then in Docker
 Every command is run from the project root: ~/gen_ai_topics_practice
 Copy one line at a time. Check the "Expect" note before moving on.
 
@@ -11,7 +11,7 @@ PHASE A. Before anything runs
 
   pwd && ls -d [0-9][0-9]_* | wc -l
 
-  Expect: a path ending in gen_ai_topics_practice, then 12.
+  Expect: a path ending in gen_ai_topics_practice, then 13.
   If you get anything else, stop and cd to the right place.
 
 
@@ -30,19 +30,20 @@ PHASE A. Before anything runs
   Expect: a uv version, a docker version, and "docker daemon OK".
   If the daemon line is missing, start Docker Desktop and try again.
 
-  Then confirm the sweep script is executable:
+  Then confirm both suite scripts are executable:
 
-  test -x run_all_exercises.sh && echo "run_all_exercises.sh is executable"
+  test -x run_level_00_all_basic_test_suite.sh && test -x run_level_01_integration_test_suite.sh && echo "both suite scripts are executable"
 
   Expect: the confirmation line.
-  If not:  chmod +x run_all_exercises.sh
+  If not:  chmod +x run_level_00_all_basic_test_suite.sh run_level_01_integration_test_suite.sh
 
 
-=== STEP 4. Confirm the API key landed in all twelve, without printing it ===
+=== STEP 4. Confirm the API key landed in all thirteen, without printing it ===
 
   for d in [0-9][0-9]_*/; do printf '%-34s %s\n' "$d" "$(grep -c '^OPENAI_API_KEY=sk-' "$d/.env" 2>/dev/null || echo 0)"; done
 
-  Expect: twelve rows, every one showing 1.
+  Expect: thirteen rows, every one showing 1. (09 makes no model calls,
+  but its .env carries the key anyway for uniformity.)
 
 
 === STEP 5. Note your starting credit balance ===
@@ -54,24 +55,31 @@ PHASE A. Before anything runs
 
 
 =====================================================================
-PHASE B. Local test sweep. Cheap first, expensive last.
+PHASE B. Local test sweeps. Level 00 (free tier) first, then Level 01
+(paid integration). The old skip-03 dance is gone: Level 00 never runs
+the expensive gated tests, so the whole sweep is cheap by design.
 =====================================================================
 
 === STEP 6. Dry run. Confirms the plan, spends nothing ===
 
-  ./run_all_exercises.sh --dry-run
+  ./run_level_00_all_basic_test_suite.sh --dry-run
 
-  Expect: twelve "would run" lines, with 01_stale_index_replay marked
-  [needs Docker services]. No warnings about missing folders.
+  Expect: thirteen "would run" lines, with 01_stale_index_replay marked
+  [needs Docker services] and 03 / 13 marked with their Neo4j container
+  names (neo4j-fruit-graph, neo4j-temporal-graph). No warnings about
+  missing folders.
 
 
-=== STEP 7. The cheap sweep. Eleven exercises, skipping graphrag ===
+=== STEP 7. The Level 00 sweep. All thirteen, free tier ===
 
-  ./run_all_exercises.sh --skip 03
+  ./run_level_00_all_basic_test_suite.sh
 
-  Expect: a results table, mostly PASS. This takes a few minutes and
-  spends a small amount. 01 will start and stop a Postgres container
-  on its own.
+  Expect: a results table, all PASS. A few minutes; the paid gates
+  (GRAPHRAG_RUN_INDEX, TEMPORAL_RUN_INDEX) are off, so 03 and 13 run
+  only their free tests. 01 starts Postgres via compose; 03 and 13
+  start their Neo4j containers if needed (a first-ever start downloads
+  plugins and takes a couple of minutes). All services are STOPPED
+  afterwards - never removed.
 
   If anything FAILs, read the tail printed on screen, then dig in with
   the grep command the report gives you. Do not move on until you
@@ -86,46 +94,58 @@ PHASE B. Local test sweep. Cheap first, expensive last.
   Nothing to run here.
 
 
-=== STEP 9. Confirm nothing was left running ===
+=== STEP 9. Confirm nothing was left RUNNING (stopped is by design) ===
 
-  docker ps -a && docker volume ls
+  docker ps && echo --- && docker ps -a --format '{{.Names}}\t{{.Status}}'
 
-  Expect: empty lists, or at least nothing from these exercises. The
-  sweep tears its own services down; this is the check that it did.
-
-
-=== STEP 10. graphrag on its own. This is the slow, costly one ===
-
-  ./run_all_exercises.sh --only 03
-
-  Expect: several minutes. It indexes the corpus with real model calls -
-  entity extraction and community summarisation across the whole thing.
-  Watch it rather than walking away, given the credit balance.
+  Expect: no running containers from these exercises, but DO expect
+  stopped ones to persist: neo4j-fruit-graph, neo4j-temporal-graph and
+  01's compose containers, plus their volumes in docker volume ls. That
+  is the policy, not a leak - the Neo4j volumes hold indexes that cost
+  real money to build, so the suites stop containers and never remove
+  anything.
 
 
-=== STEP 11. Check the cost of graphrag specifically ===
+=== STEP 10. The Level 01 integration suite. This is the one that spends ===
+
+  ./run_level_01_integration_test_suite.sh
+
+  It asks "Proceed and spend real tokens? [y/N]" first - answer y.
+  Expect: for every exercise, the full walkthrough (main.py walk) with
+  real model calls, then pytest with BOTH paid gates exported
+  (GRAPHRAG_RUN_INDEX=1, TEMPORAL_RUN_INDEX=1). On a first-ever run 03
+  indexes and 13 ingests, which is the slow, costly part - watch it
+  rather than walking away. On later runs both skip straight to queries
+  and the whole suite costs cents.
+
+
+=== STEP 11. Check what the integration run cost ===
 
   Open platform.openai.com/usage again.
-  The delta since Step 8 is what indexing cost. Write it down - it is a
-  genuinely useful number to be able to quote.
+  The delta since Step 8 is what the full paid tier cost, dominated by
+  03's indexing and 13's ingestion if their databases were empty. Write
+  it down - it is a genuinely useful number to be able to quote.
 
   Nothing to run here.
 
 
-=== STEP 12. Full sweep, now that both halves are known good ===
+=== STEP 12. Rerun Level 01 to see the steady-state cost ===
 
-  ./run_all_exercises.sh
+  ./run_level_01_integration_test_suite.sh --yes
 
-  Expect: all twelve, and faster on 03 than Step 10 was, because its
-  walkthrough skips re-indexing when output/ already holds parquet.
+  Expect: all thirteen, and much faster on 03 and 13 than Step 10 was,
+  because both skip re-indexing when their Neo4j databases already hold
+  the graph. This is the number a reader re-running the repo will see.
 
 
-=== STEP 13. Read the transcript if you want the detail ===
+=== STEP 13. Read the transcripts if you want the detail ===
 
-  less test_run.log
+  less test_run.log            # Level 00: full uv sync + pytest output
+  ls logs/                     # Level 01: one timestamped file per run
+  less logs/integration_run_*  # walkthrough answers + pytest, per exercise
 
-  Everything is in there: full uv sync output, full pytest output per
-  exercise. Press q to quit.
+  Press q to quit less. The Level 01 transcripts contain every model
+  answer verbatim, which makes them diffable across runs.
 
 
 =====================================================================
@@ -157,10 +177,13 @@ PHASE C. Preparing for Docker
     docker run     runs "main.py walk", which makes real API calls -
                    the same spend again as the local run, per exercise.
 
-  Recommendation: build all twelve, run two or three. Building proves the
-  Dockerfiles are correct, which is what a reader cloning the repo cares
-  about. Running twelve full walkthroughs a second time is the same money
-  for information you already have.
+  Recommendation: build the eleven that have Dockerfiles, run two or
+  three. Building proves the Dockerfiles are correct, which is what a
+  reader cloning the repo cares about. 03 and 13 have NO Dockerfile by
+  design - their setup scripts and long-lived Neo4j containers ARE the
+  containerised path - so they are excluded from this phase. Running
+  eleven full walkthroughs a second time is the same money for
+  information you already have.
 
   Nothing to run here.
 
@@ -213,7 +236,6 @@ delete the image before starting the next one. Never build two at once.
   Go back to step 18, change EX to the next one, and work through:
 
     02_hybrid_rerank_retrieval
-    03_graphrag_fruit_graph
     04_rag_eval_ragas
     05_pii_erasure_replay
     06_injection_defence_llm_guard
@@ -229,6 +251,10 @@ delete the image before starting the next one. Never build two at once.
 
   12_disk_ann_diskannpy uses Python 3.11 rather than 3.12, so it pulls a
   second base image. Expect that build to take longer.
+
+  03_graphrag_fruit_graph and 13_temporal_bitemporal_graphiti are NOT in
+  this list: neither has a Dockerfile. Their containerised story is the
+  long-lived Neo4j container each setup script manages.
 
 
 === STEP 22. 01_stale_index_replay, the compose one ===
@@ -260,12 +286,21 @@ delete the image before starting the next one. Never build two at once.
 PHASE E. Cleanup
 =====================================================================
 
-=== STEP 23. Confirm no containers are running or stopped ===
+=== STEP 23. Remove leftover containers - EXCEPT the two Neo4j ones ===
 
-  docker ps -a
+  docker ps -a --format '{{.Names}}'
 
-  Expect: only the header row.
-  If anything is listed:  docker rm -f $(docker ps -aq)
+  Expect: neo4j-fruit-graph and neo4j-temporal-graph (stopped), plus
+  possibly 01's compose containers. The Neo4j pair MUST survive this
+  phase: their volumes hold paid-for indexes, and "docker volume prune"
+  in step 26 only spares volumes attached to an existing container.
+  Remove everything EXCEPT them:
+
+  docker ps -a --format '{{.Names}}' | grep -v -e '^neo4j-fruit-graph$' -e '^neo4j-temporal-graph$' | xargs -r docker rm -f
+
+  Then confirm exactly two remain:
+
+  docker ps -a --format '{{.Names}}'
 
 
 === STEP 24. Remove any exercise images still present ===
@@ -284,24 +319,32 @@ PHASE E. Cleanup
   cache survives image deletion, which is why disk stays full otherwise.
 
 
-=== STEP 26. Remove orphaned volumes ===
+=== STEP 26. Remove orphaned volumes (the Neo4j ones are safe IF step 23
+was followed) ===
 
+  docker volume ls
   docker volume prune -f
 
   Expect: reclaimed space, usually the Postgres volume from exercise 01.
+  neo4j-fruit-graph-data and neo4j-temporal-graph-data are spared because
+  their (stopped) containers still exist - prune only removes volumes no
+  container references. If you removed those containers in step 23, STOP:
+  pruning now destroys both graph indexes, and the next Level 01 run pays
+  to rebuild them.
 
 
 === STEP 27. Confirm you are back where you started ===
 
   docker system df
 
-  Compare against step 14. Images, containers and build cache should be
-  at or near the baseline.
+  Compare against step 14. Images and build cache should be at or near
+  the baseline; the two Neo4j containers and their volumes remain, which
+  is the intended steady state of this repository.
 
 
 === STEP 28. OPTIONAL - reclaim local disk too ===
 
-  The twelve .venv directories are large. Remove them only if you are
+  The thirteen .venv directories are large. Remove them only if you are
   finished, since the next sweep will have to re-sync everything.
 
   du -sh [0-9][0-9]_*/.venv 2>/dev/null | tail -1
@@ -314,10 +357,11 @@ PHASE E. Cleanup
   Each exercise can clean up after itself. This removes indexes, graph
   output and redacted corpora, but leaves source and .env alone.
 
-  for d in 03_graphrag_fruit_graph 05_pii_erasure_replay 12_disk_ann_diskannpy; do ( cd "$d" && uv run python main.py clean ); done
+  for d in 03_graphrag_fruit_graph 05_pii_erasure_replay 12_disk_ann_diskannpy 13_temporal_bitemporal_graphiti; do ( cd "$d" && uv run python main.py clean ); done
 
-  Note: doing this to 03 means the next run re-indexes, which costs money
-  again. Leave it alone unless you want a genuinely fresh run.
+  Note: doing this to 03 or 13 empties their Neo4j databases, so the next
+  Level 01 run re-indexes and re-ingests, which costs money again. Leave
+  them alone unless you want a genuinely fresh run.
 
 
 =====================================================================
@@ -328,7 +372,7 @@ PHASE F. When you are ready to publish
 
   find . -name ".env" -not -path "*/.venv/*" | wc -l && grep -c "^\.env$" .gitignore
 
-  Expect: 12 and 1. Twelve key files on disk, all covered by one ignore rule.
+  Expect: 13 and 1. Thirteen key files on disk, all covered by one ignore rule.
 
 
 === STEP 31. Initialise git ===
@@ -339,7 +383,7 @@ PHASE F. When you are ready to publish
 
   git add -A && git status --porcelain | wc -l
 
-  Expect: somewhere around 130 files. The number itself matters less than
+  Expect: somewhere around 145 files. The number itself matters less than
   the order of magnitude: if it is in the thousands, .gitignore is not
   being honoured, so stop and investigate before committing.
 
@@ -356,13 +400,13 @@ PHASE F. When you are ready to publish
 
   git status --porcelain | grep -c "uv\.lock$"
 
-  Expect: 12. uv's guidance is to commit lockfiles, and these exercises
+  Expect: 13. uv's guidance is to commit lockfiles, and these exercises
   pin awkward versions, so anyone cloning needs them.
 
 
 === STEP 35. First commit ===
 
-  git commit -m "Twelve standalone exercises for the ten RAG problems"
+  git commit -m "Thirteen standalone exercises for the ten RAG problems"
 
 
 === STEP 36. Connect to the empty GitHub repo and push ===
@@ -377,7 +421,7 @@ PHASE F. When you are ready to publish
 === STEP 37. Verify on the web ===
 
   Open the repo in a browser. Check that no .env appears anywhere, that
-  all twelve folders are present, and that the README renders.
+  all thirteen folders are present, and that the README renders.
 
   If a key ever does reach GitHub: rotate it immediately at
   platform.openai.com/api-keys. Removing the commit is not enough.

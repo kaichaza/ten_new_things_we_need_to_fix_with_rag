@@ -1,0 +1,23 @@
+[project]
+name = "temporal-bitemporal-graphiti"
+version = "0.1.0"
+description = "The index has no sense of time: bi-temporal facts with Graphiti on Neo4j"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Pinned to the version named in the countermeasures sheet and verified
+    # against this exercise's code (constructor, add_episode, search,
+    # EntityEdge validity fields all checked on 0.29.x).
+    "graphiti-core>=0.29,<0.30",
+    "neo4j>=5.19",
+    "openai>=1.91,<2",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

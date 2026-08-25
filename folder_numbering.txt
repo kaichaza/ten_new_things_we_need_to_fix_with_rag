@@ -6,8 +6,8 @@ sequence. Folder 07 is the exercise behind problem 7 on that page, and so on
 through 10. This replaces the earlier scheme, which ordered by whitepaper
 pitfall and covered eleven exercises.
 
-Two exercises are not on the one-pager. They sit at 11 and 12 so they sort
-last and the gap is visible without needing a footnote.
+Three exercises are not on the one-pager. They sit at 11, 12 and 13 so
+they sort last and the gap is visible without needing a footnote.
 
 
 Current layout
@@ -26,10 +26,11 @@ Current layout
 
   11_semantic_chunking_two_llms     not on the one-pager
   12_disk_ann_diskannpy             not on the one-pager
+  13_temporal_bitemporal_graphiti   not on the one-pager
 
 
-Why 11 and 12 are not on the one-pager
---------------------------------------
+Why 11, 12 and 13 are not on the one-pager
+------------------------------------------
 
 Both were merged into neighbouring problems when the page was cut from twenty
 pitfalls to ten, on the grounds that a client hears them as one complaint
@@ -47,7 +48,14 @@ rather than two.
       nothing fundamental left unsolved, which makes it a weak thing to
       lead with.
 
-Both exercises still stand on their own and are worth keeping. They are
+  13  Time-blind indexing (whitepaper pitfall 6) was never merged into a
+      one-pager problem; the page was cut before the exercise existed. It
+      was added on 25 August 2026 because it was judged the most dangerous
+      gap in the whitepaper coverage: the corpus's own dated documents
+      prove that "prefer the newest" picks a lie, which only validity-aware
+      retrieval fixes. It sits at 13 rather than renumbering the page.
+
+All three exercises stand on their own and are worth keeping. They are
 supporting evidence rather than headline material.
 
 
@@ -92,8 +100,9 @@ Kept for reference, since the whitepaper numbering has not changed:
   10  pitfalls 14, 19  non-determinism, and who did what (audit and attribution)
   11  pitfall 2   chunking destroys meaning
   12  pitfall 10  memory-priced vector infrastructure (disk-first ANN)
+  13  pitfall 6   the index has no sense of time (bi-temporal Graphiti)
 
-Six of the twenty pitfalls have no exercise: 6 (time-blind indexes),
-9 (embedder lock-in), 12 (model churn), 15 (long context is not solved
-context), and 20 (the compliance burden), which is discharged by 05 and 10
-rather than by an exercise of its own.
+Four of the twenty pitfalls have no exercise: 9 (embedder lock-in),
+12 (model churn), 15 (long context is not solved context), and 20 (the
+compliance burden), which is discharged by 05 and 10 rather than by an
+exercise of its own. Pitfall 6 was the fifth until exercise 13 covered it.

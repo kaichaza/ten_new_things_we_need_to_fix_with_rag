@@ -1,8 +1,8 @@
 # Pitfall Practice: exercise summary
 
-Twelve standalone exercises reinforcing, through working code, the themes of
-the whitepaper *Applied Generative AI: Twenty Pitfalls and Their Solutions*.
-All twelve call OpenAI models exclusively (`gpt-4.1-mini` / `gpt-4.1` for
+Thirteen standalone exercises reinforcing, through working code, the themes
+of the whitepaper *Applied Generative AI: Twenty Pitfalls and Their
+Solutions*. All thirteen call OpenAI models exclusively (`gpt-4.1-mini` / `gpt-4.1` for
 chat, `text-embedding-3-small` for embeddings), configured through
 `MODEL_CHEAP`, `MODEL_STRONG` and `EMBED_MODEL` in each folder's `.env`. The
 two exceptions, noted where relevant, are `mcp_tools_and_scan` (no model
@@ -12,10 +12,11 @@ OpenAI equivalent; the generative step in that exercise is still OpenAI).
 
 **Numbering.** Exercises 01 to 10 are numbered to match the slide order of
 the ten-problem one-pager, so folder `07_model_routing_litellm` is the
-exercise behind problem 7 on that page. Exercises 11 and 12 are the two the
+exercise behind problem 7 on that page. Exercises 11 to 13 are the three the
 one-pager does not cover: chunking, which was folded into the retrieval
-precision problem, and disk-first ANN, which was folded into the cost
-problem. They are parked at the end so they sort last.
+precision problem; disk-first ANN, which was folded into the cost problem;
+and bi-temporal retrieval (whitepaper pitfall 6), added after the page was
+cut. They are parked at the end so they sort last.
 
 ---
 
@@ -87,30 +88,44 @@ resp = client.chat.completions.create(
 ## 03 · graphrag_fruit_graph
 
 **What it's about.** Top-k chunk retrieval is structurally local: a question
-whose answer is a property of the *whole* corpus ("what themes run across
-the customers?") gets assembled from an arbitrary sample. This exercise
-drives Microsoft's pinned `graphrag` CLI over the fruit-shop corpus, which
-extracts an entity graph, detects communities and pre-summarises them at
-index time. Global queries are then answered from summaries of summaries;
-local queries use the entity neighbourhood. Indexing makes real,
-metered model calls - a few cents on this tiny corpus.
+whose answer is a property of the *whole* corpus ("what connects the
+regular customers?") gets assembled from an arbitrary sample. This exercise
+builds the graph answer on Neo4j: `neo4j-graphrag`'s `SimpleKGPipeline`
+extracts an entity graph from the fruit-shop corpus into a long-lived Neo4j
+container, hierarchical Leiden community detection runs server-side in the
+Graph Data Science plugin, and an LLM writes a report per community onto
+`(:Community)` nodes. Global questions are answered from summaries of
+summaries; local questions expand from vector-matched chunks through shared
+entities. A dated distractor document (a flyer restating the grape question
+with the wrong mechanism) makes retrieval quality falsifiable, and the
+answer prompt weighs provenance so official records outrank noticeboard
+gossip. Replaced Microsoft's `graphrag` CLI (now in maintenance mode) on
+25 August 2026; state lives in the `neo4j-fruit-graph-data` docker volume
+rather than in parquet files.
 
-**Key libraries.** `graphrag` (pinned to 3.1.1), `pyyaml` (patching the
-generated `settings.yaml`).
+**Key libraries.** `neo4j-graphrag` (extraction pipeline, retrievers, RAG
+templates), `neo4j` (driver; also runs the GDS Leiden call as plain
+Cypher), `openai` (embeddings + generation via the pipeline's clients).
 
-**How the model is called.** Indirectly: `main.py` never calls the OpenAI
-SDK itself. It scaffolds graphrag's config, then rewrites only the model
-names inside it so every model graphrag calls during extraction, community
-summarisation and querying is the configured OpenAI model.
+**How the model is called.** Through `neo4j-graphrag`'s own OpenAI LLM and
+embedder wrappers during extraction, summarisation and query; community
+detection itself is model-free Cypher against the GDS plugin:
 
 ```python
-cfg = yaml.safe_load(SETTINGS.read_text())
-for name, model_cfg in cfg.get("models", {}).items():
-    if "embedding" in str(model_cfg.get("type", "")) or "embedding" in name:
-        model_cfg["model"] = EMBED_MODEL
-    else:
-        model_cfg["model"] = CHAT_MODEL
-SETTINGS.write_text(yaml.safe_dump(cfg, sort_keys=False))
+run_cypher(
+    driver,
+    f"""
+    CALL gds.leiden.write('{GDS_GRAPH}', {{
+        writeProperty: 'leiden',
+        includeIntermediateCommunities: true,
+        gamma: 1.5,
+        concurrency: 1,
+        randomSeed: 42
+    }})
+    YIELD communityCount, modularity
+    RETURN communityCount, modularity
+    """,
+)
 ```
 
 ---
@@ -413,13 +428,62 @@ def embed(texts: list[str]) -> np.ndarray:
 
 ---
 
+## 13 · temporal_bitemporal_graphiti
+
+**What it's about.** Two retrieved documents disagree because months passed
+between them, and a similarity retriever presents both as simultaneous
+truth. This exercise ingests a six-document fruit-shop *timeline* (grapes
+sold, inspections fail, contract ends, a false flyer, a new supplier,
+grapes return) through Graphiti in date order, so every extracted fact
+lands as a graph edge carrying `valid_at` / `invalid_at` intervals, and
+contradicted facts are invalidated with a timestamp rather than deleted.
+The walkthrough asks "is the shop selling grapes?" as of three dates and
+gets three different correct answers; asks the evolution question and gets
+a sequence rather than a blend; and springs the recency trap - the false
+allergy flyer postdates the true documents, so prefer-the-newest picks the
+lie, while validity-aware retrieval discards it. The superseded edges
+remain queryable with their invalidation timestamps: history preserved as
+an audit trail. One honest empirical limit is printed rather than hidden:
+Graphiti's LLM-mediated contradiction detection invalidated the
+supplier-scoped facts but not the entity-level "sells grapes" fact, so the
+mid-gap as-of answer inherits pitfall 5's grounding problem - temporal
+machinery is only as good as its invalidator's recall.
+
+**Key libraries.** `graphiti-core` (episodic ingestion, bi-temporal edges,
+hybrid search; pinned to the 0.29 line), `neo4j` (driver for the free
+inspection commands, against the exercise's own container on 7475/7688),
+`openai` (the answer-synthesis step over validity-filtered facts).
+
+**How the model is called.** Graphiti drives extraction and invalidation
+through an explicitly configured cheap model (`LLMConfig(model=CHAT_MODEL)`,
+since the library's own default is a stronger tier), plus OpenAI embeddings
+for fact search. The as-of mechanism - the point of the exercise - is plain
+visible code:
+
+```python
+def valid_as_of(edges, as_of: datetime):
+    """The validity filter that IS this exercise's point: a fact counts on a
+    date only if it had become true by then and had not yet stopped being
+    true. Facts with unknown valid_at are kept (excluding them would hide
+    background facts the extractor could not date)."""
+    kept = []
+    for edge in edges:
+        starts_ok = edge.valid_at is None or edge.valid_at <= as_of
+        ends_ok = edge.invalid_at is None or edge.invalid_at > as_of
+        if starts_ok and ends_ok:
+            kept.append(edge)
+    return kept
+```
+
+---
+
 ## At a glance
 
 | # | Exercise | Core library | Model role |
 |---|---|---|---|
 | 01 | stale_index_replay | lancedb + psycopg | embed corpus, answer from context |
 | 02 | hybrid_rerank_retrieval | rank-bm25 | embeddings + listwise reranking |
-| 03 | graphrag_fruit_graph | graphrag | extraction, summarisation, query (via config) |
+| 03 | graphrag_fruit_graph | neo4j-graphrag + neo4j (GDS) | extraction, community reports, provenance-weighed query |
 | 04 | rag_eval_ragas | ragas | pipeline model + LLM-as-judge |
 | 05 | pii_erasure_replay | lancedb | embed + erasure-verification reviewer |
 | 06 | injection_defence_llm_guard | llm-guard | local scanner (only non-OpenAI model) + generation |
@@ -429,5 +493,6 @@ def embed(texts: list[str]) -> np.ndarray:
 | 10 | observability_langfuse_otel | opentelemetry-sdk | generation, traced |
 | 11 | semantic_chunking_two_llms | openai | cheap model as a validated chunker |
 | 12 | disk_ann_diskannpy | diskannpy | embeddings only |
+| 13 | temporal_bitemporal_graphiti | graphiti-core | episodic extraction + validity-filtered synthesis |
 
-Exercises 11 and 12 are not on the ten-problem one-pager.
+Exercises 11, 12 and 13 are not on the ten-problem one-pager.
