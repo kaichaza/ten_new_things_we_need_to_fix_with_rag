@@ -1,8 +1,6 @@
 # Pitfall Practice: exercise summary
 
-Thirteen standalone exercises reinforcing, through working code, the themes
-of the whitepaper *Applied Generative AI: Twenty Pitfalls and Their
-Solutions*. All thirteen call OpenAI models exclusively (`gpt-4.1-mini` / `gpt-4.1` for
+Thirteen standalone exercises reinforcing, through working code, key Gen AI themes. All thirteen call OpenAI models exclusively (`gpt-4.1-mini` / `gpt-4.1` for
 chat, `text-embedding-3-small` for embeddings), configured through
 `MODEL_CHEAP`, `MODEL_STRONG` and `EMBED_MODEL` in each folder's `.env`. The
 two exceptions, noted where relevant, are `mcp_tools_and_scan` (no model

@@ -1,8 +1,7 @@
 # Pitfall Practice: thirteen standalone exercises
 
 Thirteen self-contained Python exercises that reinforce, through working code,
-the themes of the whitepaper *Applied Generative AI: Twenty Pitfalls and Their
-Solutions*: index freshness and replay, hybrid retrieval and reranking, graph
+key Gen AI themes I have observed as the technology matures: index freshness and replay, hybrid retrieval and reranking, graph
 retrieval, evaluation, PII erasure, injection defence, routing and cost, bounded
 agents, MCP tool trust, end-to-end observability, chunking, disk-based vector
 search, and bi-temporal (time-aware) retrieval.
