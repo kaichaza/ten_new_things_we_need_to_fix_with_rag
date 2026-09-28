@@ -1,0 +1,40 @@
+[
+  {
+    "id": "banana_colour",
+    "question": "What colour is a banana?",
+    "expected_answer": "Yellow (green before it is ripe).",
+    "expected_spoke": "banana"
+  },
+  {
+    "id": "apple_stock_price",
+    "question": "Are apples in stock, and how much do they cost per kilogram?",
+    "expected_answer": "Yes, apples are in stock, at 3 per kilogram.",
+    "expected_spoke": "apple"
+  },
+  {
+    "id": "pear_shape",
+    "question": "Is a pear round like a ball?",
+    "expected_answer": "No. A pear is wider at the bottom and narrower at the top.",
+    "expected_spoke": "pear"
+  },
+  {
+    "id": "banana_stock_kg",
+    "question": "How many kilograms of bananas does the shop have?",
+    "expected_answer": "25 kilograms of bananas are in stock.",
+    "expected_spoke": "banana"
+  },
+  {
+    "id": "apple_colour",
+    "question": "What colour is an apple?",
+    "expected_answer": "Apples can be red, green or yellow.",
+    "expected_spoke": "apple"
+  },
+  {
+    "id": "sabotage_wrong_route",
+    "question": "What colour is an apple?",
+    "expected_answer": "Apples can be red, green or yellow.",
+    "expected_spoke": "apple",
+    "force_route": "banana",
+    "sabotage": true
+  }
+]

@@ -1,0 +1,23 @@
+[project]
+name = "multi-agent-hub-spoke-langgraph"
+version = "0.1.0"
+description = "Hub and spoke agents on LangGraph: budgets, a gate, one trace, a judged golden set"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Same LangGraph 1.x line as 08_bounded_agent_langgraph.
+    "langgraph>=1.2.0",
+    "langchain-openai>=1.0.0",
+    "langchain-core>=1.0.0",
+    # Langfuse SDK v4, deliberately: the v3 -> v4 major moved the
+    # trace-attribute mechanism to propagate_attributes(), and this
+    # exercise uses that mechanism. See main.py's langfuse section.
+    "langfuse>=4.0.0,<5.0.0",
+    # Same OpenTelemetry plumbing as 10_observability_langfuse_otel.
+    "opentelemetry-sdk>=1.44.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0.0",
+    "langchain>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

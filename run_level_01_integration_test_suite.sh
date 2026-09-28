@@ -158,6 +158,7 @@ EXERCISES=(
     "11_semantic_chunking_two_llms"
     "12_disk_ann_diskannpy"
     "13_temporal_bitemporal_graphiti"
+    "14_multi_agent_hub_spoke_langgraph"
 )
 
 # Service needs per exercise, mirrored from run_all_exercises.sh:

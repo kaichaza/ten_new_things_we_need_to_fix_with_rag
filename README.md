@@ -91,6 +91,7 @@ To test everything at once, two suites run from the root:
 | 11_semantic_chunking_two_llms | openai | A cheaper second LLM proposes chunk boundaries |
 | 12_disk_ann_diskannpy | diskannpy | Disk-first ANN vs memory-priced serving |
 | 13_temporal_bitemporal_graphiti | graphiti-core | Bi-temporal facts; three dates, three correct answers |
+| 14_multi_agent_hub_spoke_langgraph | langgraph, langfuse | Hub and spoke agents: budgets, a gate, one trace, a judged golden set |
 
 Exercises 11 to 13 are not on the ten-problem one-pager. Chunking was folded
 into the retrieval precision problem and disk-first ANN into the cost problem,
